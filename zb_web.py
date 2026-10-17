@@ -931,7 +931,11 @@ def build_payload(cfg: dict, rows: list[dict], scope: str, start: str, end: str,
     payload["range"] = {"start": start, "end": end}
     hs2, he2 = history_range(cfg, start, end)
     payload["历史基准区间"] = {"start": hs2, "end": he2} if hs2 else None
-    payload["fetchedAt"] = _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # 时间戳固定用北京时间（UTC+8）。
+    # GitHub Actions 的机器是 UTC —— 直接用 datetime.now() 会写成 UTC，
+    # 页面上就会显示一个比实际早 8 小时的时间，看着像"数据很久没更新"。
+    payload["fetchedAt"] = (_dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(hours=8)
+                            ).strftime("%Y-%m-%d %H:%M:%S")
     payload["rawCount"] = len(rows)
     payload["title"] = cfg.get("报表标题") or "门店业绩看板"
 
