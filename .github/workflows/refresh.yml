@@ -12,10 +12,6 @@ on:
     # UTC 时间。北京时间 = UTC+8。
     # 每 10 分钟一次（GitHub 允许的最短是 5 分钟；高峰期实际可能延迟几分钟）。
     - cron: '*/10 * * * *'
-  # push 也触发，改了代码立刻重跑。
-  # 机器人自己提交快照时会被下面的 if 挡掉，不会自我循环。
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -29,8 +25,6 @@ concurrency:
 
 jobs:
   build:
-    # 机器人自己提交快照时不重跑，否则会自己触发自己
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -78,7 +72,7 @@ jobs:
         if: steps.cfg.outputs.have == '1'
         run: |
           set +e
-          python zb_static.py --范围 商场店 --时间 今年 --输出 public/index.html
+          python zb_static.py --范围 商场店 --时间 本月 --输出 public/index.html
           RC=$?
           set -e
           if [ "$RC" -ne 0 ]; then
