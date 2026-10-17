@@ -340,10 +340,12 @@
   }
 
   function syncChips() {
-    [].forEach.call($('scopeChips').children, function (c) {
+    var sc = $('scopeChips');
+    if (sc) [].forEach.call(sc.children, function (c) {
       c.classList.toggle('active', c.dataset.scope === state.scope);
     });
-    [].forEach.call($('rangeChips').children, function (c) {
+    var rc = $('rangeChips');
+    if (rc) [].forEach.call(rc.children, function (c) {
       c.classList.toggle('active', !state.custom && c.dataset.preset === state.preset);
     });
   }
@@ -1321,7 +1323,10 @@
       switchView(b.dataset.view);
     });
 
-    $('scopeChips').addEventListener('click', function (e) {
+    // 「商场店 / 全部渠道」切换已去掉（三个店全是商场店），
+    // 这里加个 if 兜底，免得以后又把这个块删了导致报错。
+    var sc = $('scopeChips');
+    if (sc) sc.addEventListener('click', function (e) {
       var b = e.target.closest('.chip'); if (!b) return;
       state.scope = b.dataset.scope;
       state.pdata = null;                // 范围变了，产品数据要重新取
