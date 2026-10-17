@@ -1415,18 +1415,46 @@
     var span = esc((STATIC.range && STATIC.range.start) || '不限') + ' ~ ' +
                esc((STATIC.range && STATIC.range.end) || '不限');
 
+    // 从地址推出「手动触发取数」的链接：
+    //   用户名.github.io/仓库名  ->  github.com/用户名/仓库名/actions/workflows/refresh.yml
+    var owner = (location.hostname.match(/^([^.]+)\.github\.io$/i) || [])[1] || '';
+    var repo = (location.pathname.split('/')[1] || '');
+    var actionsUrl = (owner && repo)
+      ? 'https://github.com/' + owner + '/' + repo + '/actions/workflows/refresh.yml'
+      : '';
+
     // 顶部说明条
     var bar = document.createElement('div');
     bar.className = 'static-bar';
     bar.innerHTML =
-      '<b>数据快照</b>　更新于 ' + when + '　·　区间 ' + span +
-      '　·　范围 ' + esc(STATIC.scope || '') +
-      '<span class="static-note">这个页面是定时生成的，不是实时数据。搜索、筛选、点人名看明细都能正常用。</span>';
+      '<b>数据快照</b>　更新于 <span id="staticWhen">' + when + '</span>' +
+      '　·　区间 ' + span + '　·　范围 ' + esc(STATIC.scope || '') +
+      '<span class="static-note">这个页面由 GitHub 定时生成，不是实时数据。' +
+      '搜索、筛选、点人名看明细都能正常用。</span>' +
+      (actionsUrl
+        ? '<span class="static-note">想让机器人现在就去取一次数：' +
+          '<a href="' + esc(actionsUrl) + '" target="_blank" rel="noopener">' +
+          '打开 GitHub 点 Run workflow ↗</a>（要登录，手机上得先登一次）</span>'
+        : '');
     var wrap = document.querySelector('.wrap');
     if (wrap) wrap.insertBefore(bar, wrap.firstChild);
 
-    // 需要后台的按钮全部禁用
-    ['btnRefresh', 'btnQuery'].forEach(function (id) {
+    // 「重新抓取」在静态页没法连 ERP，改成「检查更新」：
+    // 去拉一次最新的部署，有新数据就刷新，没有就提示。
+    var rf = $('btnRefresh');
+    if (rf) {
+      rf.disabled = false;
+      rf.classList.remove('off');
+      rf.textContent = '检查更新';
+      rf.title = '去 GitHub 拉最新部署，有新数据就自动刷新';
+      rf.addEventListener('click', function () { checkFresh(true); });
+    }
+    // 每 2 分钟自动检查一次 —— 有人把页面一直开着时，新数据一到就自己更新
+    var timer = setInterval(function () { checkFresh(false); }, 120000);
+    window.addEventListener('beforeunload', function () { clearInterval(timer); });
+
+    // 其余需要后台的功能仍然禁用
+    ['btnQuery'].forEach(function (id) {
       var el = $(id);
       if (el) { el.disabled = true; el.classList.add('off'); el.title = '静态页面，没有后台服务'; }
     });
@@ -1440,12 +1468,41 @@
       var el = $(id);
       if (el) { el.disabled = true; el.classList.add('off'); }
     });
-    // 导出 Excel 也要后台，禁用
     var rep = $('btnReport');
     if (rep) { rep.disabled = true; rep.classList.add('off'); rep.title = '静态页面，没有后台服务'; }
 
     var b = document.querySelector('.brand small');
-    if (b) b.textContent = '数据快照 · 非实时';
+    if (b) b.textContent = '数据快照 · 定时更新';
+  }
+
+  // 静态页检查更新：拉一次同地址（带时间戳绕开缓存），比对 fetchedAt
+  var _checking = false;
+  function checkFresh(manual) {
+    if (_checking) return;
+    _checking = true;
+    var url = location.pathname + '?v=' + Date.now();
+    fetch(url, { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.text() : null; })
+      .then(function (t) {
+        _checking = false;
+        if (!t) { if (manual) toast('检查失败，稍后再试', true); return; }
+        var m = t.match(/window\.__DATA__=(\{[\s\S]*?\});/);
+        if (!m) { if (manual) toast('页面格式变了，刷新一下就好'); return; }
+        var nd;
+        try { nd = JSON.parse(m[1]); } catch (e) { return; }
+        if (nd.fetchedAt && nd.fetchedAt !== STATIC.fetchedAt) {
+          // 有新数据 —— 直接换成新页面
+          location.replace(location.pathname + '?v=' + Date.now());
+        } else if (manual) {
+          var mins = '';
+          try {
+            var ft = new Date(String(STATIC.fetchedAt).replace(' ', 'T') + '+08:00');
+            mins = Math.max(0, Math.round((Date.now() - ft) / 60000)) + ' 分钟前';
+          } catch (e) {}
+          toast('已是最新（数据抓取于 ' + (STATIC.fetchedAt || '?') + (mins ? '，' + mins : '') + '）');
+        }
+      })
+      .catch(function () { _checking = false; if (manual) toast('网络不通，稍后再试', true); });
   }
 
   /* ---------------- 启动 ---------------- */
