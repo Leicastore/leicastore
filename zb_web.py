@@ -262,10 +262,19 @@ def _person_amounts(cfg: dict, rows: list[dict], scope: str) -> dict:
     用来按历史占比分目标。**必须喂查询区间之外的数据**，
     否则目标按他已经卖了多少来定，每人的完成率会变成同一个数。
     """
+    return {k: v["金额"] for k, v in _person_detail(cfg, rows, scope).items()}
+
+
+def _person_detail(cfg: dict, rows: list[dict], scope: str) -> dict:
+    """按销售员汇总，同时记下他属于哪个门店。
+
+    为什么要门店：看「本月」时某人这个月还没开单，他就压根不在当期数据里，
+    目标也跟着消失 —— 店长会以为他没指标。带上门店才能把他补回列表（业绩 0）。
+    """
     keep = _scope_stores(cfg, scope)
     stores_cfg = cfg.get("门店", {}) or {}
     match = core.build_store_matcher(cfg)
-    out: dict[str, float] = {}
+    out: dict[str, dict] = {}
     for r in rows:
         store = core.cell_text(r.get("htfl"))
         if store not in stores_cfg:
@@ -273,7 +282,10 @@ def _person_amounts(cfg: dict, rows: list[dict], scope: str) -> dict:
         if keep is not None and store not in keep:
             continue
         person = clean_person(r.get("xsry")) or "（未填销售）"
-        out[person] = out.get(person, 0.0) + core.to_money(r.get("moneyall"))
+        rec = out.setdefault(person, {"金额": 0.0, "门店": store})
+        rec["金额"] += core.to_money(r.get("moneyall"))
+        if store and store != "其他渠道":
+            rec["门店"] = store          # 优先用能对上门店配置的那个
     return out
 
 
@@ -303,13 +315,14 @@ class StoreInfo:
 
 def aggregate(cfg: dict, rows: list[dict], scope: str = "商场店",
               compares: dict | None = None, span_months: float = 0.0,
-              hist: dict | None = None) -> dict:
+              hist: dict | None = None, hist_stores: dict | None = None) -> dict:
     """把 ERP 合同行聚合成看板要的 JSON
 
     compares: {"同比": 快照, "环比": 快照, "同比标签": "...", "环比标签": "..."}
     hist: 各销售员的历史业绩 {姓名: 金额}，按历史占比分目标用（必须排除查询区间）
     """
     compares = compares or {}
+    hist_stores = hist_stores or {}
     yoy = compares.get("同比") or {}
     mom = compares.get("环比") or {}
     stores_cfg = cfg.get("门店", {}) or {}
@@ -380,6 +393,17 @@ def aggregate(cfg: dict, rows: list[dict], scope: str = "商场店",
             for person in info.fixed_staff:
                 b["staff"].setdefault(person, {"name": person, "amount": 0.0, "count": 0, "max": 0.0,
                                                "first": None, "last": None})
+
+    # 补人：这个区间没开单的人也要出现（业绩 0），否则他的目标会凭空消失。
+    # 典型场景：看「本月」时某人这个月还没开单，店长会以为他没指标。
+    if hist_stores:
+        for name, store in hist_stores.items():
+            b = buckets.get(store)
+            if not b or name in b["staff"]:
+                continue
+            b["staff"][name] = {"name": name, "amount": 0.0, "count": 0, "max": 0.0,
+                                "avg": 0.0, "share": 0.0, "rank": 0,
+                                "first": None, "last": None, "补位": True}
 
     # 排名与占比
     for store, b in buckets.items():
@@ -488,7 +512,7 @@ def aggregate(cfg: dict, rows: list[dict], scope: str = "商场店",
         "personOrder": [p for p in person_order if p in keep_people],
         "records": filtered_records,
         "storeTypes": {n: (infos[n].type if n in infos else "其他") for n in all_names},
-        "任务": add_task(cfg, store_list, span_months, hist) if span_months else None,
+        "任务": add_task(cfg, store_list, span_months, hist, hist_stores) if span_months else None,
     }
 
 
@@ -822,7 +846,7 @@ class DataService:
 # --------------------------------------------------------------------------
 
 def add_task(cfg: dict, store_list: list[dict], span: float,
-             hist: dict | None = None) -> dict:
+             hist: dict | None = None, hist_stores: dict | None = None) -> dict:
     """给每个门店挂上任务和完成率，并把门店目标拆解到人
 
     hist: 各销售员的**历史**业绩 {姓名: 金额}，用来按历史占比分目标。
@@ -853,7 +877,10 @@ def add_task(cfg: dict, store_list: list[dict], span: float,
 
         # ---- 拆解到人 ----
         std = t["标准"]
-        active = [x for x in (b.get("staff") or []) if x.get("count", 0) > 0]
+        # 本期 0 单但历史有单的人也要分目标 —— 否则他"没有指标"，
+        # 看本月时尤其明显（某人这个月还没开单就整个消失）。
+        active = [x for x in (b.get("staff") or [])
+                  if x.get("count", 0) > 0 or hist.get(x.get("name") or "", 0) > 0]
         for x in (b.get("staff") or []):
             x["目标"] = None
             x["目标完成率"] = None
@@ -906,18 +933,22 @@ def build_payload(cfg: dict, rows: list[dict], scope: str, start: str, end: str,
     """
     # 按历史占比分目标要用的历史业绩。必须排除查询区间，
     # 否则目标按他已经卖了多少来定，每人的完成率会变成同一个数。
+    hist_stores: dict[str, str] = {}
     if hist is None:
         hist = {}
         hs, he = history_range(cfg, start, end)
         if hs and he:
             try:
-                hist = _person_amounts(cfg, service.fetch_ref(hs, he), scope)
+                detail = _person_detail(cfg, service.fetch_ref(hs, he), scope)
+                hist = {k: v["金额"] for k, v in detail.items()}
+                hist_stores = {k: v["门店"] for k, v in detail.items()}
                 log(f"  历史基准 {hs} ~ {he}：{len(hist)} 人")
             except Exception as exc:
                 log(f"  [历史基准] 抓不到，目标只能平均分：{exc}")
 
     payload = aggregate(cfg, rows, scope=scope, compares=compares,
-                        span_months=core.task_months(start, end), hist=hist)
+                        span_months=core.task_months(start, end), hist=hist,
+                        hist_stores=hist_stores)
 
     # 目标按整月算；另外给「实际过了几个月」显示时间进度。
     # 看 10-01~10-16 时，目标记 1 个月（10月），进度记 0.53 个月。
