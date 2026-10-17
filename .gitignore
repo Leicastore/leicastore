@@ -1,0 +1,12 @@
+# 真实配置绝不进仓库
+config.local.json
+
+# 运行时产生的数据
+数据/原始数据/
+数据/输出/
+public/
+__pycache__/
+*.pyc
+
+# 心跳文件（工作流自己维护）
+.heartbeat

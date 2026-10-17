@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>商场店销售看板</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-row">
+    <div class="brand" id="brand">销售看板<small id="brandSub">Tiannuo Imaging · Leica Boutique</small></div>
+
+    <div class="chips" id="viewChips">
+      <button class="chip active" data-view="sales">销售业绩</button>
+      <button class="chip" data-view="product">产品分类</button>
+    </div>
+
+    <div class="spacer"></div>
+    <button class="btn btn-light" id="btnRefresh" title="清缓存重新抓取">↻ 重新抓取</button>
+    <button class="btn btn-light" id="btnReport">导出 Excel</button>
+  </div>
+
+  <div class="topbar-row" style="margin-top:14px">
+    <div class="chips" id="scopeChips">
+      <button class="chip active" data-scope="商场店">商场店</button>
+      <button class="chip" data-scope="全部">全部渠道</button>
+    </div>
+    <span class="sep"></span>
+    <div class="chips" id="rangeChips">
+      <button class="chip" data-preset="本月">本月</button>
+      <button class="chip" data-preset="上月">上月</button>
+      <button class="chip" data-preset="本季">本季</button>
+      <button class="chip active" data-preset="今年">今年</button>
+      <button class="chip" data-preset="去年">去年</button>
+      <button class="chip" data-preset="全部">全部</button>
+    </div>
+    <div class="dates">
+      <input type="date" id="dFrom"><span>—</span><input type="date" id="dTo">
+      <button class="btn btn-solid" id="btnQuery">查询</button>
+    </div>
+  </div>
+
+  <div class="meta" id="metaLine">正在加载…</div>
+</header>
+
+<div class="wrap">
+  <div id="errorBox"></div>
+
+  <!-- ==================== 销售业绩 ==================== -->
+  <div id="viewSales">
+    <div class="kpis" id="kpis"></div>
+
+    <div class="section-title" id="secStores">
+      <span class="zh">门店对比</span><span class="en">Boutiques</span>
+    </div>
+    <div class="stores" id="stores"></div>
+
+    <div class="section-title" id="secTrend">
+      <span class="zh">月度走势（按人）</span><span class="en">Monthly Trend by Person</span>
+    </div>
+    <div class="chartcard">
+      <div id="trendWrap"></div>
+      <div class="legend" id="trendLegend"></div>
+    </div>
+
+    <div class="section-title" id="secCompare">
+      <span class="zh">同比 / 环比</span><span class="en">Year-on-Year · Month-on-Month</span>
+    </div>
+    <div class="tablecard">
+      <div class="card-head">
+        <h3>逐月同比环比</h3>
+        <span class="hint" id="cmpHint"></span>
+      </div>
+      <div class="scroll"><table id="cmpTable"></table></div>
+    </div>
+
+    <div class="section-title" id="secGoal">
+      <span class="zh">目标拆解</span><span class="en">Goal Breakdown · 店 → 人 → 型号</span>
+    </div>
+    <div class="tablecard">
+      <div class="card-head">
+        <h3>目标拆到人</h3>
+        <span class="hint" id="goalHint"></span>
+        <span class="hint" style="margin-left:auto" id="goalMode"></span>
+      </div>
+      <div class="scroll"><table id="goalTable"></table></div>
+    </div>
+    <div class="tablecard">
+      <div class="card-head">
+        <h3>人 × 型号 —— 每人卖了哪些、卖了多少</h3>
+        <span class="hint" id="pmHint"></span>
+        <span class="hint" style="margin-left:auto">格子里是台数 / 金额　·　对着目标看还缺哪个系列</span>
+      </div>
+      <div class="scroll"><table id="personModelTable"></table></div>
+    </div>
+
+    <div class="section-title" id="secEveryone">
+      <span class="zh">销售排名</span><span class="en">Sales Ranking</span>
+    </div>
+    <div class="tablecard">
+      <div class="card-head">
+        <h3>全员业绩排名</h3>
+        <span class="hint" id="everyoneHint"></span>
+        <span class="hint" style="margin-left:auto">条越长业绩越高　·　点姓名看他的合同</span>
+      </div>
+      <div class="rankhead">
+        <div class="rk">#</div>
+        <div class="who">销售员 / 门店</div>
+        <div style="flex:1">业绩金额</div>
+        <div class="amt">金额（元）</div>
+        <div class="cnt">合同数</div>
+        <div class="yoy">同比 YoY</div>
+      </div>
+      <div class="ranklist" id="rankList"></div>
+    </div>
+
+    <div class="section-title" id="secDetail">
+      <span class="zh">合同明细</span><span class="en">Contracts</span>
+    </div>
+    <div class="tablecard">
+      <div class="toolbar">
+        <input type="search" id="q" placeholder="搜索合同号 / 客户 / 销售员 …">
+        <select id="filterStore"></select>
+        <span class="hint" id="detailCount" style="color:var(--gray);font-size:11.5px"></span>
+      </div>
+      <div class="scroll"><table id="detailTable"></table></div>
+    </div>
+  </div><!-- /viewSales -->
+
+  <!-- ==================== 产品分类 ==================== -->
+  <div id="viewProducts" class="hidden">
+    <div class="kpis" id="pkpis"></div>
+
+    <div class="section-title" id="secCat">
+      <span class="zh">品类构成</span><span class="en">Category Mix</span>
+    </div>
+    <div class="tablecard">
+      <div class="card-head"><h3>卖了什么</h3><span class="hint" id="catHint"></span></div>
+      <div style="padding:10px 20px 20px" id="catList"></div>
+    </div>
+
+    <div class="section-title" id="secCamSeries">
+      <span class="zh">徕卡相机分类</span><span class="en">Camera Series</span>
+    </div>
+    <div class="stores" id="camSeries"></div>
+
+    <div class="section-title" id="secModel">
+      <span class="zh">相机型号排行</span><span class="en">Model Ranking</span>
+    </div>
+    <div class="tablecard">
+      <div class="card-head"><h3>各型号销量</h3><span class="hint" id="modelHint"></span></div>
+      <div class="scroll"><table id="modelTable"></table></div>
+    </div>
+
+    <div class="section-title" id="secStoreCam">
+      <span class="zh">各门店卖的相机</span><span class="en">Cameras by Boutique</span>
+    </div>
+    <div class="tablecard">
+      <div class="card-head"><h3>门店 × 相机</h3><span class="hint">点门店名可筛选下方明细</span></div>
+      <div class="scroll"><table id="storeCamTable"></table></div>
+    </div>
+
+    <div class="section-title" id="secPDetail">
+      <span class="zh">产品销售明细</span><span class="en">Product Detail</span>
+    </div>
+    <div class="tablecard">
+      <div class="toolbar">
+        <input type="search" id="pq" placeholder="搜索产品名 / 型号 / 销售员 …">
+        <select id="pfilterCat"></select>
+        <select id="pfilterStore"></select>
+        <span class="hint" id="pdetailCount" style="color:var(--gray);font-size:11.5px"></span>
+      </div>
+      <div class="scroll"><table id="pdetailTable"></table></div>
+    </div>
+  </div><!-- /viewProducts -->
+</div>
+
+<div class="overlay hidden" id="overlay">
+  <div class="spinner"></div>
+  <div class="msg" id="overlayMsg">Loading…</div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

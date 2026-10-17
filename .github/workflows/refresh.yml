@@ -1,0 +1,153 @@
+name: 刷新看板
+
+# 定时从 ERP 取数，重新生成静态看板，发布到 GitHub Pages。
+# 也可以到 Actions 页面点「Run workflow」手动刷新。
+#
+# 兜底：GitHub 的服务器在境外，未必连得上国内 ERP。
+#       取数失败时自动改用仓库里的快照（数据/缓存/看板快照.json）发布，
+#       至少页面还在、还是上次的数据，不会整个挂掉。
+
+on:
+  schedule:
+    # UTC 时间。北京时间 = UTC+8。
+    # 每 10 分钟一次（GitHub 允许的最短是 5 分钟；高峰期实际可能延迟几分钟）。
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write        # 心跳提交 + 提交快照要用
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 装依赖
+        run: pip install --quiet openpyxl
+
+      # 历史取数的磁盘缓存。GitHub Actions 每次都是全新机器，
+      # 不持久化的话每次都会把同比/环比/两个基准重新拉一遍（约 2900 条合同），
+      # 10 分钟一次就是一天 41 万条 —— 智邦的云端 ERP 扛不住（并发猛拉打挂过）。
+      # 缓存后每次只拉当期 533 条，压力降八成。
+      - name: 恢复历史取数缓存
+        uses: actions/cache@v4
+        with:
+          path: 数据/缓存/历史取数
+          key: hist-fetch-${{ github.run_id }}
+          restore-keys: |
+            hist-fetch-
+
+      - name: 写入 ERP 配置
+        id: cfg
+        env:
+          CONFIG_JSON: ${{ secrets.CONFIG_JSON }}
+        run: |
+          if [ -z "$CONFIG_JSON" ]; then
+            # 没设 Secret 不报错 —— 先用仓库里的快照把站点发出去。
+            # 想让它自动从 ERP 更新，再去 Settings → Secrets 加 CONFIG_JSON。
+            echo "::warning::还没设置 CONFIG_JSON，这次用仓库里的快照发布（数据不会自动更新）"
+            echo "have=0" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          printf '%s' "$CONFIG_JSON" > config.json
+          echo "配置已写入（长度 ${#CONFIG_JSON} 字节）"
+          echo "have=1" >> "$GITHUB_OUTPUT"
+
+      - name: 生成静态看板（取数失败自动退回快照）
+        id: gen
+        # 没 Secret 就直接用快照，别去撞 ERP
+        if: steps.cfg.outputs.have == '1'
+        run: |
+          set +e
+          python zb_static.py --范围 商场店 --时间 今年 --输出 public/index.html
+          RC=$?
+          set -e
+          if [ "$RC" -ne 0 ]; then
+            echo "::warning::ERP 取数失败（退出码 $RC），改用仓库里的快照发布"
+            if [ ! -f 数据/缓存/看板快照.json ]; then
+              echo "::error::取数失败，而且仓库里也没有快照，没法发布"
+              exit 1
+            fi
+            python zb_static.py --离线 --输出 public/index.html
+            echo "fallback=1" >> "$GITHUB_OUTPUT"
+          else
+            echo "fallback=0" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 没有 Secret 时用快照生成
+        if: steps.cfg.outputs.have == '0'
+        run: |
+          if [ ! -f 数据/缓存/看板快照.json ]; then
+            echo "::error::仓库里没有快照，没法发布。请先设置 CONFIG_JSON"
+            exit 1
+          fi
+          python zb_static.py --离线 --输出 public/index.html
+
+      - name: 检查产物
+        run: |
+          test -f public/index.html || { echo "::error::没有生成 index.html"; exit 1; }
+          ls -lh public/index.html
+          # 页面必须是完整的：内联数据里有任务和相机型号才算数
+          grep -q '__DATA__' public/index.html || { echo "::error::页面缺内联数据"; exit 1; }
+
+      # 把这次取到的数据存成快照提交回去，下次取数失败才有东西可发。
+      # 两个坑：① 快照带 fetchedAt 时间戳，每次都"有变化" —— 所以每天最多提交一次；
+      #         ② .gitignore 里有 .heartbeat，git add 不加 -f 会直接报错。
+      - name: 提交快照 + 心跳
+        if: steps.gen.outputs.fallback == '0'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          TODAY=$(date -u +%Y-%m-%d)
+          LASTSNAP=$(git log -1 --format=%cs -- 数据/缓存/看板快照.json 2>/dev/null || echo "")
+
+          if [ -f 数据/缓存/看板快照.json ] && [ "$LASTSNAP" != "$TODAY" ]; then
+            git add -f 数据/缓存/看板快照.json
+            git commit -m "chore: 更新看板数据快照 [skip ci]"
+            git push
+            echo "快照已提交（上次 $LASTSNAP，今天 $TODAY）"
+          else
+            echo "今天已经提交过快照了（$LASTSNAP），跳过"
+          fi
+
+          # 防坑：GitHub 会在仓库 60 天无提交后自动停掉定时任务。
+          # 只在「超过 30 天没提交」时补一次心跳。
+          LAST=$(git log -1 --format=%ct 2>/dev/null || echo 0)
+          NOW=$(date +%s)
+          DAYS=$(( (NOW - LAST) / 86400 ))
+          echo "距上次提交 $DAYS 天"
+          if [ "$DAYS" -ge 30 ]; then
+            date -u +"%Y-%m-%dT%H:%M:%SZ" > .heartbeat
+            git add -f .heartbeat
+            git commit -m "chore: 心跳提交（保持定时任务不被停用）"
+            git push
+          fi
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
