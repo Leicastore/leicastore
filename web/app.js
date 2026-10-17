@@ -751,6 +751,9 @@
 
   /* ---------------- 月度走势 ---------------- */
   function renderTrend() {
+    // 这一块（月度走势按人）已从页面删掉 —— 看「本月」时只有一根柱子，没意义。
+    // 留个守卫，免得再调用时报 null。
+    if (!$('trendWrap') || !$('trendLegend')) return;
     var d = state.data;
     var months = d.trend || [];
     if (!months.length) {
