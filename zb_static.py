@@ -131,7 +131,8 @@ def build_offline(out_file: Path, log=print) -> Path:
     return _render(payload, out_file, log=log)
 
 
-def build(cfg: dict, scope: str, start: str, end: str, out_file: Path, log=print) -> Path:
+def build(cfg: dict, scope: str, start: str, end: str, out_file: Path, log=print,
+          preset: str = "") -> Path:
     e = cfg.get("智邦ERP") or {}
     if not e.get("地址"):
         raise SystemExit("config.json 里「智邦ERP」没配好。")
@@ -158,6 +159,9 @@ def build(cfg: dict, scope: str, start: str, end: str, out_file: Path, log=print
     svc = W.DataService(cfg)
     svc.fetch = lambda a, b, force=False, log=print: fetch(a, b)   # 复用已经登录的会话
     payload = W.build_payload(cfg, rows, scope, start, end, compares, svc, log=log)
+    # 把实际用的是哪个预设（本月/今年…）带进页面，
+    # 否则静态页顶部那个按钮会高亮错 —— 数据是本月，却亮着「今年」。
+    payload["preset"] = preset or ""
 
     # 存一份快照，供离线兜底用
     try:
@@ -198,7 +202,8 @@ def main(argv=None) -> int:
         if args.离线:
             out = build_offline(Path(args.输出))
         else:
-            out = build(cfg, scope, start, end, Path(args.输出))
+            out = build(cfg, scope, start, end, Path(args.输出),
+                        preset=(args.时间 or (wc.get("默认时间") or "")))
     except ErpError as exc:
         print(f"\n  [X] ERP 出错：{exc}")
         return 2

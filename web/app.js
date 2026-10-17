@@ -1411,6 +1411,10 @@
 
   /* ---------------- 静态模式：没有后台，把需要服务的控件收起来 ---------------- */
   function enterStaticMode() {
+    // 顶部区间按钮的高亮要跟着实际数据走 —— 静态页可能生成的是「本月」，
+    // 不设这个就会出现"数据是本月、却亮着今年"的错位。
+    if (STATIC.preset) state.preset = STATIC.preset;
+    try { syncChips(); } catch (e) {}
     var when = esc(STATIC.fetchedAt || '');
     var span = esc((STATIC.range && STATIC.range.start) || '不限') + ' ~ ' +
                esc((STATIC.range && STATIC.range.end) || '不限');
