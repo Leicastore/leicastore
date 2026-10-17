@@ -325,6 +325,10 @@
   }
 
   function writeHash() {
+    // 静态页（GitHub Pages）不写 hash —— 这里改了也没法重新取数，
+    // 只会让地址栏变成一长串 %E5%95%86 之类，发到微信里更容易被判可疑。
+    // 保持 URL 干干净净一个 https://xxx.github.io/repo/ 就够。
+    if (window.__STATIC__) return;
     var p = new URLSearchParams();
     p.set('scope', state.scope);
     if (state.start || state.end) {
@@ -1439,6 +1443,9 @@
 
   /* ---------------- 静态模式：没有后台，把需要服务的控件收起来 ---------------- */
   function enterStaticMode() {
+    // 地址栏清理：去掉 ?v=1792...（自动刷新加的）和 #scope=...（旧链接带的）。
+    // 发到微信里的链接越干净，越不像可疑链接。
+    try { history.replaceState(null, '', location.pathname); } catch (e) {}
     // 顶部区间按钮的高亮要跟着实际数据走 —— 静态页可能生成的是「本月」，
     // 不设这个就会出现"数据是本月、却亮着今年"的错位。
     if (STATIC.preset) state.preset = STATIC.preset;
