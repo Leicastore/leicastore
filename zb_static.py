@@ -109,8 +109,17 @@ def _render(payload: dict, out_file: Path, log=print) -> Path:
                         "<style>\n" + css + "\n</style>")
     html = html.replace('<script src="app.js"></script>',
                         boot + "\n<script>\n" + js + "\n</script>")
-    html = html.replace("<title>商场店销售看板</title>",
-                        f"<title>{payload.get('title') or '门店业绩看板'}</title>")
+    title = payload.get("title") or "门店业绩看板"
+    html = html.replace("<title>商场店销售看板</title>", f"<title>{title}</title>")
+    # 链接预览（微信/企业微信/飞书 抓的是 og:* 和 description）
+    desc = ("商场店业绩看板 · " + (payload.get("range") or {}).get("start", "")
+            + " ~ " + (payload.get("range") or {}).get("end", ""))
+    og = (f'<meta name="description" content="{desc}">\n'
+          f'<meta property="og:title" content="{title}">\n'
+          f'<meta property="og:description" content="{desc}">\n'
+          f'<meta property="og:type" content="website">')
+    if "<meta name=\"description\"" not in html:
+        html = html.replace("</title>", "</title>\n" + og, 1)
 
     out_file.parent.mkdir(parents=True, exist_ok=True)
     out_file.write_text(html, encoding="utf-8")
