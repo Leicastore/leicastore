@@ -67,8 +67,28 @@ jobs:
             echo "have=0" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          printf '%s' "$CONFIG_JSON" > config.json
-          echo "配置已写入（长度 ${#CONFIG_JSON} 字节）"
+          # 只把「智邦ERP」这一段（地址/账号/密码/串号）从 Secret 合并进来，
+          # 其余配置（报表标题、门店目标、分类规则……）以仓库里的 config.json 为准。
+          #
+          # 以前是整份覆盖，结果改了仓库的 config.json 完全没效果 ——
+          # 标题永远是 Secret 里那份老的。Secret 里只有密码这一个真机密。
+          python - <<'PY'
+          import json, os, sys
+          secret = json.loads(os.environ["CONFIG_JSON"])
+          try:
+              repo = json.load(open("config.json", encoding="utf-8"))
+          except Exception:
+              repo = {}
+          erp = secret.get("智邦ERP") or {}
+          if erp:
+              repo.setdefault("智邦ERP", {}).update(erp)
+          else:
+              repo.update(secret)          # 没分段的老格式，退回整体覆盖
+          json.dump(repo, open("config.json", "w", encoding="utf-8"),
+                    ensure_ascii=False, indent=2)
+          print("配置已合并：ERP 凭据来自 Secret，其余取仓库 config.json")
+          print("  报表标题 =", repo.get("报表标题"))
+          PY
           echo "have=1" >> "$GITHUB_OUTPUT"
 
       - name: 生成静态看板（取数失败自动退回快照）
