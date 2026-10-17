@@ -168,6 +168,11 @@ def classify(title: str, cfg: dict) -> dict:
     rules = cfg.get("产品分类", {}) or {}
 
     category = _match_rule(t, rules.get("品类规则")) or "其他"
+    # 「徕卡 原厂配件 望远镜运动型背带」这类，名字里同时有「配件」和「望远镜」，
+    # 而「望远镜」规则排在「配件」前面，会被误算成望远镜 —— 望远镜的销售额就虚高了。
+    # 带「配件」二字的都归配件。
+    if category == "望远镜" and "配件" in t:
+        category = "配件"
     brand = _match_rule(t, rules.get("品牌规则")) or ("徕卡原厂" if "徕卡" in t else "其他品牌")
     condition = _match_rule(t, rules.get("新旧规则")) or "全新"
 

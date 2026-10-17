@@ -1179,19 +1179,23 @@
       $('pmHint').textContent = '';
       return;
     }
-    // 列太多会挤：取金额前 6 个系列，其余并成「其他」。
+    // 列太多会挤：取金额前 9 个系列，其余并成「其他」。
     // 注意分类里本来就有一个叫「其他」的大类，必须把它排除在候选列之外，
     // 否则会出现两个「其他」列。
-    var TOPN = 6;
+    // 望远镜 / 拍立得这类小占比系列量少但必须看得见 —— 只按金额截断的话，
+    // 卖了一台望远镜会整个消失（占比 0.8%，排第 10），店长会以为没卖。
+    var TOPN = 9;
+    var ALWAYS = ['望远镜系列', '拍立得系列'];
+    var allNames = series.map(function (r) { return r['系列']; });
     var cols = series
       .filter(function (r) { return r['系列'] !== '其他'; })
-      .slice(0, TOPN)
-      .map(function (r) { return r['系列']; });
+      .map(function (r) { return r['系列']; })
+      .filter(function (n, i, a) { return i < TOPN || ALWAYS.indexOf(n) >= 0; });
     var restName = '其他';
     var goalOf = {};
     rows.forEach(function (r) { goalOf[r.p.name] = r.p; });
 
-    $('pmHint').textContent = pm.length + ' 人 · 显示金额前 ' + cols.length + ' 个系列，其余并入「其他」';
+    $('pmHint').textContent = pm.length + ' 人 · 显示金额前 ' + TOPN + ' 个系列（望远镜/拍立得必显示），其余并入「其他」';
 
     $('personModelTable').innerHTML =
       '<thead><tr><th>销售员</th><th>门店</th><th class="num">目标</th>' +
