@@ -1,4 +1,4 @@
-/* ==========================================================================
+﻿/* ==========================================================================
    天诺影像 · 销售看板
    卡片式设计 ｜ 克制配色：墨黑 / 白 / 徕卡红 #E20613
    ========================================================================== */
@@ -455,3 +455,8 @@ tr.row-first td { border-top: 1px solid #DFE2E7; font-weight: 700; }
   .kpis { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
   .store-nums { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* 静态页：数据"多旧"的标记 */
+.static-age { font-weight: 700; color: var(--gray-2); margin-left: 4px; }
+.static-age.warm { color: #C77700; }
+.static-age.old { color: var(--down); }

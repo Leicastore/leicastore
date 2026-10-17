@@ -1428,6 +1428,7 @@
     bar.className = 'static-bar';
     bar.innerHTML =
       '<b>数据快照</b>　更新于 <span id="staticWhen">' + when + '</span>' +
+      '<span class="static-age" id="staticAge"></span>' +
       '　·　区间 ' + span + '　·　范围 ' + esc(STATIC.scope || '') +
       '<span class="static-note">这个页面由 GitHub 定时生成，不是实时数据。' +
       '搜索、筛选、点人名看明细都能正常用。</span>' +
@@ -1439,6 +1440,25 @@
     var wrap = document.querySelector('.wrap');
     if (wrap) wrap.insertBefore(bar, wrap.firstChild);
 
+    // 数据"多旧"要一眼看出来 —— 每 30 秒更新一次这个标记
+    function paintAge() {
+      var el = $('staticAge');
+      if (!el) return;
+      var mins = null;
+      try {
+        var ft = new Date(String(STATIC.fetchedAt).replace(' ', 'T') + '+08:00');
+        mins = Math.max(0, Math.round((Date.now() - ft) / 60000));
+      } catch (e) {}
+      if (mins === null) { el.textContent = ''; return; }
+      var label = mins < 1 ? '刚刚' : (mins < 60 ? mins + ' 分钟前'
+                  : (mins < 1440 ? Math.floor(mins / 60) + ' 小时前'
+                                 : Math.floor(mins / 1440) + ' 天前'));
+      el.textContent = '（' + label + '）';
+      el.className = 'static-age' + (mins > 60 ? ' old' : (mins > 20 ? ' warm' : ''));
+    }
+    paintAge();
+    setInterval(paintAge, 30000);
+
     // 「重新抓取」在静态页没法连 ERP，改成「检查更新」：
     // 去拉一次最新的部署，有新数据就刷新，没有就提示。
     var rf = $('btnRefresh');
@@ -1449,7 +1469,9 @@
       rf.title = '去 GitHub 拉最新部署，有新数据就自动刷新';
       rf.addEventListener('click', function () { checkFresh(true); });
     }
-    // 每 2 分钟自动检查一次 —— 有人把页面一直开着时，新数据一到就自己更新
+
+    // 打开页面就先检查一次（有更新的部署就直接换上），之后每 2 分钟再查
+    setTimeout(function () { checkFresh(false); }, 1500);
     var timer = setInterval(function () { checkFresh(false); }, 120000);
     window.addEventListener('beforeunload', function () { clearInterval(timer); });
 
