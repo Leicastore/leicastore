@@ -1462,20 +1462,15 @@
       ? 'https://github.com/' + owner + '/' + repo + '/actions/workflows/refresh.yml'
       : '';
 
-    // 顶部说明条
+    // 顶部说明条：只留一行状态（更新于 / 区间 / 范围）。
+    // 那些"这不是实时数据""去 GitHub 点 Run workflow"之类的提示都去掉了 ——
+    // 每天看的人不需要被反复提醒。
     var bar = document.createElement('div');
     bar.className = 'static-bar';
     bar.innerHTML =
       '<b>数据快照</b>　更新于 <span id="staticWhen">' + when + '</span>' +
       '<span class="static-age" id="staticAge"></span>' +
-      '　·　区间 ' + span + '　·　范围 ' + esc(STATIC.scope || '') +
-      '<span class="static-note">这个页面由 GitHub 定时生成，不是实时数据。' +
-      '搜索、筛选、点人名看明细都能正常用。</span>' +
-      (actionsUrl
-        ? '<span class="static-note">想让机器人现在就去取一次数：' +
-          '<a href="' + esc(actionsUrl) + '" target="_blank" rel="noopener">' +
-          '打开 GitHub 点 Run workflow ↗</a>（要登录，手机上得先登一次）</span>'
-        : '');
+      '　·　区间 ' + span + '　·　范围 ' + esc(STATIC.scope || '');
     var wrap = document.querySelector('.wrap');
     if (wrap) wrap.insertBefore(bar, wrap.firstChild);
 
