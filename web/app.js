@@ -1102,11 +1102,18 @@
     var rows = [];
     (d.stores || []).forEach(function (s) {
       (s.staff || []).forEach(function (p) {
-        if (p.count > 0 && p['目标'] !== null && p['目标'] !== undefined) {
+        // 只要定了目标就列出来，哪怕这个区间一单没开。
+        // 之前还有 p.count > 0 的限制，结果本月没开单的人目标整个消失，
+        // 店长会以为他没指标。
+        if (p['目标'] !== null && p['目标'] !== undefined) {
           rows.push({ store: s.name, p: p });
         }
       });
     });
+
+    // 时间进度：用来判断"没达成的算正常还是落后"
+    var timePct = ((d['时间进度'] || {})['百分比']) || 0;
+    var cnt = { ok: 0, warn: 0, bad: 0 };
 
     if (!tk || !rows.length) {
       $('goalTable').innerHTML = '<tbody><tr><td class="empty">没有配置门店目标</td></tr></tbody>';
@@ -1131,13 +1138,21 @@
 
     $('goalTable').innerHTML =
       '<thead><tr><th>门店</th><th>销售员</th><th class="num">目标</th><th class="num">已完成</th>' +
-      '<th style="width:150px">完成率</th><th class="num">差额</th>' +
+      '<th style="width:190px">完成率</th><th class="num">差额</th>' +
       '<th>要卖的相机型号（按当前结构）</th></tr></thead><tbody>' +
       rows.map(function (r) {
         var p = r.p;
         var rate = p['目标完成率'];
         // 完成率是 0~100% 的进度，不是涨跌，用普通进度条（不要用双向条）
         var col = rate >= 1 ? 'var(--up)' : (rate >= 0.8 ? '#C77700' : 'var(--down)');
+        // 达成与否要一句话说清楚：
+        //   够 100% → 已达成
+        //   没到 100% 但赶上了时间进度 → 进度正常（月中看完成率低是正常的）
+        //   低于时间进度 → 落后
+        var st;
+        if (rate >= 1) { st = { t: '已达成', c: 'ok' }; cnt.ok++; }
+        else if (rate >= timePct) { st = { t: '进度正常', c: 'warn' }; cnt.warn++; }
+        else { st = { t: '落后', c: 'bad' }; cnt.bad++; }
         var gap = p['目标差额'];
         var gapTxt = gap <= 0
           ? '<span class="cmp-up">超额 ' + money(Math.abs(gap)) + '</span>'
@@ -1158,6 +1173,7 @@
             Math.min(rate * 100, 100).toFixed(1) + '%;background:' + col + '"></i></div>' +
             '<span style="font-size:12.5px;font-weight:700;color:' + col +
             ';min-width:52px;text-align:right">' + (rate * 100).toFixed(1) + '%</span>' +
+            '<span class="st-badge ' + st.c + '">' + st.t + '</span>' +
           '</div></td>' +
           '<td class="num">' + gapTxt + '</td>' +
           '<td class="units" title="' + esc(title) + '">' +
@@ -1166,7 +1182,14 @@
         '</tr>';
       }).join('') + '</tbody>';
 
-    // ---- 人 × 系列：每人实际卖了哪些系列、各多少 ----
+    // 达成情况汇总（要在表格渲染完之后再写，cnt 是渲染时累加的）
+    var sum = [];
+    if (cnt.ok) sum.push('<span class="st-badge ok">已达成 ' + cnt.ok + ' 人</span>');
+    if (cnt.warn) sum.push('<span class="st-badge warn">进度正常 ' + cnt.warn + ' 人</span>');
+    if (cnt.bad) sum.push('<span class="st-badge bad">落后 ' + cnt.bad + ' 人</span>');
+    $('goalHint').innerHTML = esc(rows.length + ' 人 · 合计目标 ' + money(tk['标准']) + ' 元 / ' +
+      (tk['月数'] || 1) + ' 个整月') + esc(tpTxt) +
+      (sum.length ? '　·　' + sum.join('　') : '');
     // （原来还有一张「人 × 相机型号」矩阵和一张「相机型号目标」全店表，
     //   已按需求删掉 —— 表太多看着乱。系列口径更粗，门店执行时更好用。）
     // 注意：pm 必须在这里就赋值。下面那张表要用它，
