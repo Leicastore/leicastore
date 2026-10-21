@@ -468,3 +468,46 @@ tr.row-first td { border-top: 1px solid #DFE2E7; font-weight: 700; }
 }
 .st-badge.ok   { background: #E7F6EC; color: var(--up); border: 1px solid #B7E4C7; }
 .st-badge.todo { background: #F3F4F6; color: #6B7280; border: 1px solid #DDE1E7; }
+/* ============================ 今日销售 ============================ */
+.today {
+  margin-top: 16px; background: #fff; border: 1px solid var(--line);
+  border-radius: var(--r); padding: 18px 22px;
+  box-shadow: 0 1px 2px rgba(16,24,40,.04);
+  border-left: 3px solid var(--red);
+}
+.today-head {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap;
+}
+.t-label {
+  font-size: 12px; font-weight: 700; letter-spacing: .12em;
+  color: var(--gray-2); text-transform: uppercase;
+}
+.t-date { font-size: 12.5px; color: var(--gray-2); margin-top: 5px; }
+.t-total {
+  font-size: 30px; font-weight: 800; letter-spacing: -.02em;
+  color: var(--ink); line-height: 1;
+}
+.today-list { margin-top: 14px; border-top: 1px solid var(--line-2); }
+.today-row {
+  display: grid; grid-template-columns: 84px 96px 1fr auto;
+  gap: 10px; align-items: center;
+  padding: 9px 0; border-bottom: 1px solid var(--line-2);
+  font-size: 13px;
+}
+.today-row:last-child { border-bottom: 0; }
+.t-who { font-weight: 700; color: var(--ink); }
+.t-store { color: var(--gray-2); font-size: 12.5px; }
+.t-what { color: var(--ink); }
+.t-what i {
+  font-style: normal; margin-left: 8px; font-size: 12px;
+  color: var(--gray-2); background: var(--bg); border-radius: 4px;
+  padding: 1px 6px;
+}
+.t-amt { font-weight: 700; color: var(--red); text-align: right; font-variant-numeric: tabular-nums; }
+.today-empty { padding: 16px 0 4px; color: var(--gray-2); font-size: 13px; }
+@media (max-width: 720px) {
+  .today-row { grid-template-columns: 70px 1fr auto; }
+  .t-store { display: none; }
+  .t-total { font-size: 24px; }
+}

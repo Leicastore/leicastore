@@ -818,12 +818,46 @@ class DataService:
             ref_total = sum(agg_ref.values()) or 1
             cam_share = cam_total / ref_total
 
+            # ---- 今日销售：金额按合同算（准），产品名从产品明细来 ----
+            # 合同明细（records）里只有客户名和合同号，没有产品名；
+            # "今天卖了啥"只能从产品明细里按日期捞。
+            today = (_dt.datetime.now(_dt.timezone.utc)
+                     + _dt.timedelta(hours=8)).strftime("%Y-%m-%d")
+            today_rows = []
+            for r in rows:
+                d = core.to_date(r.get("dateQD"))
+                if d and d.isoformat() == today:
+                    today_rows.append(r)
+            today_amt = sum(core.to_money(r.get("moneyall")) for r in today_rows)
+
+            merged: dict[tuple, dict] = {}
+            for it in items:
+                if it.get("日期") != today:
+                    continue
+                nm = it.get("型号") or it.get("品类") or "其他"
+                k = (it.get("销售员") or "", it.get("门店") or "", nm)
+                rec = merged.setdefault(k, {
+                    "销售员": it.get("销售员") or "",
+                    "门店": it.get("门店") or "",
+                    "型号": nm,
+                    "品类": it.get("品类") or "",
+                    "数量": 0.0, "金额": 0.0,
+                })
+                rec["数量"] += float(it.get("数量") or 0)
+                rec["金额"] += float(it.get("金额") or 0)
+            today_items = sorted(merged.values(), key=lambda x: -x["金额"])
+            for rec in today_items:
+                rec["数量"] = round(rec["数量"], 2)
+                rec["金额"] = round(rec["金额"], 2)
+
             out = {"系列均价": series, "人员型号": people,
                    "相机型号": models, "相机合计": round(cam_total, 2),
                    "相机大类": cam_cats, "相机占比": round(cam_share, 4),
                    "人员相机占比": people_cam,
                    "基准区间": {"start": ref_start, "end": ref_end},
-                   "缓存合同数": len(cache)}
+                   "缓存合同数": len(cache),
+                   "今日": {"日期": today, "金额": round(today_amt, 2),
+                            "合同数": len(today_rows), "明细": today_items[:20]}}
             self.pseries[key] = out
             return out
         except Exception as exc:
@@ -984,6 +1018,7 @@ def build_payload(cfg: dict, rows: list[dict], scope: str, start: str, end: str,
     payload["相机占比"] = st.get("相机占比") or 0
     payload["型号基准区间"] = st.get("基准区间") or None
     payload["产品缓存合同数"] = st.get("缓存合同数") or 0
+    payload["今日"] = st.get("今日") or None
 
     # 强制型号台数（每人至少卖几台）—— config.json 配置
     raw = {k: v for k, v in ((cfg.get("强制型号台数") or {}).items())

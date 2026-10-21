@@ -91,6 +91,13 @@ jobs:
           PY
           echo "have=1" >> "$GITHUB_OUTPUT"
 
+      # 补齐产品明细（合同明细里没有产品名，"今天卖了啥"要靠它）。
+      # all_products 是增量的，只抓缓存里没有的合同，一天就几份，成本很低。
+      # 失败不影响主流程 —— 没有明细时页面会退回显示合同客户名。
+      - name: 补齐产品明细
+        continue-on-error: true
+        run: python zb_products.py --抓取
+
       - name: 生成静态看板（取数失败自动退回快照）
         id: gen
         # 没 Secret 就直接用快照，别去撞 ERP

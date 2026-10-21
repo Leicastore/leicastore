@@ -479,6 +479,7 @@
     }
 
     renderKpis();
+    renderToday();
     renderStores();
     renderTrend();
     renderCompare();
@@ -1085,6 +1086,70 @@
         '均价': r['均价']
       };
     }).sort(function (a, b) { return b['金额'] - a['金额']; });
+  }
+
+  /* ---------------- 今日销售 ---------------- */
+  // 管理层每天最想先看的两件事：今天做了多少钱、卖了什么。
+  // 金额用合同金额（准）；产品名只能从产品明细里按日期捞（合同明细里没有产品名）。
+  function renderToday() {
+    var box = $('todayCard');
+    if (!box) return;
+    var d = state.data || {};
+    var td = d['今日'];
+    if (!td) { box.style.display = 'none'; return; }
+    box.style.display = '';
+
+    var wd = '';
+    try {
+      var dt = new Date(td['日期'] + 'T00:00:00');
+      wd = '周' + '日一二三四五六'.charAt(dt.getDay());
+    } catch (e) {}
+
+    var items = (td['明细'] || []).slice(0, 12);
+    var body;
+    if (items.length) {
+      body = '<div class="today-list">' + items.map(function (it) {
+        // 服务/维修没有"台"的概念，别写成"维修费用 1 台"
+        var noUnit = (it['品类'] === '服务');
+        var qty = it['数量'] ? ((noUnit ? '×' : '') +
+          (Math.round(it['数量'] * 100) / 100) + (noUnit ? '' : ' 台')) : '';
+        return '<div class="today-row">' +
+          '<span class="t-who">' + esc(it['销售员'] || '') + '</span>' +
+          '<span class="t-store">' + esc(it['门店'] || '') + '</span>' +
+          '<span class="t-what">' + esc(it['型号'] || it['品类'] || '') +
+            (qty ? '<i>' + esc(qty) + '</i>' : '') + '</span>' +
+          '<span class="t-amt">' + money(it['金额']) + '</span>' +
+        '</div>';
+      }).join('') + '</div>';
+    } else {
+      // 产品明细缓存是按天增量抓的，今天的新合同可能还没抓到。
+      // 这时退回合同明细 —— 客户备注里一般写了买的什么（"二手Q2 X""M11-P 银"）。
+      var recs = (d.records || []).filter(function (r) {
+        return String(r.date).slice(0, 10) === td['日期'];
+      }).slice(0, 12);
+      if (!recs.length) {
+        body = '<div class="today-empty">今天还没有成交记录</div>';
+      } else {
+        body = '<div class="today-list">' + recs.map(function (r) {
+          return '<div class="today-row">' +
+            '<span class="t-who">' + esc(r.person || '') + '</span>' +
+            '<span class="t-store">' + esc(r.store || '') + '</span>' +
+            '<span class="t-what">' + esc(r.customer || r.title || '') + '</span>' +
+            '<span class="t-amt">' + money(r.amount) + '</span>' +
+          '</div>';
+        }).join('') + '</div>';
+      }
+    }
+
+    box.innerHTML =
+      '<div class="today-head">' +
+        '<div>' +
+          '<div class="t-label">今日销售　TODAY</div>' +
+          '<div class="t-date">' + esc(td['日期'] || '') + '　' + wd +
+            '　·　' + (td['合同数'] || 0) + ' 份合同</div>' +
+        '</div>' +
+        '<div class="t-total">' + moneyShort(td['金额'] || 0) + ' 元</div>' +
+      '</div>' + body;
   }
 
   function renderGoal() {
