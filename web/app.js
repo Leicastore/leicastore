@@ -325,10 +325,9 @@
   }
 
   function writeHash() {
-    // 静态页（GitHub Pages）不写 hash —— 这里改了也没法重新取数，
-    // 只会让地址栏变成一长串 %E5%95%86 之类，发到微信里更容易被判可疑。
-    // 保持 URL 干干净净一个 https://xxx.github.io/repo/ 就够。
-    if (window.__STATIC__) return;
+    // 本地和线上保持一致：都记筛选状态。
+    // （线上只有预生成的「本月」一份数据，所以这里主要记 q / store / view，
+    //   切换区间在线上仍然点不动 —— 那是数据只有一份的限制，不是这个的问题。）
     var p = new URLSearchParams();
     p.set('scope', state.scope);
     if (state.start || state.end) {
@@ -1531,9 +1530,8 @@
 
   /* ---------------- 静态模式：没有后台，把需要服务的控件收起来 ---------------- */
   function enterStaticMode() {
-    // 地址栏清理：去掉 ?v=1792...（自动刷新加的）和 #scope=...（旧链接带的）。
-    // 发到微信里的链接越干净，越不像可疑链接。
-    try { history.replaceState(null, '', location.pathname); } catch (e) {}
+    // 只清理自动刷新加的 ?v=1792...，保留 #筛选状态（和本地一致）。
+    try { history.replaceState(null, '', location.pathname + location.hash); } catch (e) {}
     // 顶部区间按钮的高亮要跟着实际数据走 —— 静态页可能生成的是「本月」，
     // 不设这个就会出现"数据是本月、却亮着今年"的错位。
     if (STATIC.preset) state.preset = STATIC.preset;
