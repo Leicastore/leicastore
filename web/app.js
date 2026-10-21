@@ -8,8 +8,8 @@
   var STATIC_PRODUCTS = window.__STATIC__ ? (window.__PRODUCTS__ || null) : null;
 
   var state = {
-    scope: '商场店',
-    preset: '今年',
+    scope: (window.__DEFAULT_SCOPE__ || '商场店'),
+    preset: (window.__DEFAULT_PRESET__ || '本月'),
     start: '',
     end: '',
     custom: false,
@@ -321,6 +321,7 @@
     }
     if (p.get('q')) { state.q = p.get('q'); }
     if (p.get('store')) { state.filterStore = p.get('store'); }
+    if (p.get('person')) { state.filterPerson = p.get('person'); }
     if (p.get('view')) { state.view = p.get('view'); }
   }
 
@@ -338,6 +339,7 @@
     }
     if (state.q) p.set('q', state.q);
     if (state.filterStore) p.set('store', state.filterStore);
+    if (state.filterPerson) p.set('person', state.filterPerson);
     if (state.view && state.view !== 'sales') p.set('view', state.view);
     try { history.replaceState(null, '', '#' + p.toString()); } catch (e) { /* file:// 下忽略 */ }
   }
@@ -1386,6 +1388,28 @@
     sel.innerHTML = opts.join('');
     sel.value = state.filterStore;
 
+    // 销售员下拉：把人名收齐（有的区间某人 0 单，但目标还在，也要能选到）
+    var ps = $('filterPerson');
+    if (ps) {
+      var seen = {}, names = [];
+      function addName(n) {
+        if (n && !seen[n]) { seen[n] = 1; names.push(n); }
+      }
+      (d.everyone || []).forEach(function (x) { addName(x.name); });
+      (d.stores || []).forEach(function (s) {
+        (s.staff || []).forEach(function (x) { addName(x.name); });
+      });
+      var byStore = state.filterStore
+        ? (d.stores || []).filter(function (s) { return s.name === state.filterStore; })
+            .reduce(function (a, s) { return a.concat((s.staff || []).map(function (x) { return x.name; })); }, [])
+        : null;
+      if (byStore) names = names.filter(function (n) { return byStore.indexOf(n) >= 0; });
+      ps.innerHTML = '<option value="">全部销售员</option>' + names.sort().map(function (n) {
+        return '<option value="' + esc(n) + '">' + esc(n) + '</option>';
+      }).join('');
+      ps.value = state.filterPerson;
+    }
+
     var q = state.q.trim().toLowerCase();
     var rows = d.records.filter(function (r) {
       if (state.filterStore && r.store !== state.filterStore) return false;
@@ -1504,6 +1528,11 @@
 
     $('filterStore').addEventListener('change', function () {
       state.filterStore = this.value; renderDetail(); renderToday(); writeHash();
+    });
+
+    var fp = $('filterPerson');
+    if (fp) fp.addEventListener('change', function () {
+      state.filterPerson = this.value; renderDetail(); renderToday(); writeHash();
     });
 
     document.addEventListener('click', function (e) {

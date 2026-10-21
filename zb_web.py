@@ -1186,7 +1186,24 @@ class Handler(BaseHTTPRequestHandler):
         q = {k: v[0] for k, v in parse_qs(u.query).items()}
         try:
             if u.path in ("/", "/index.html"):
-                return self._file(WEB_DIR / "index.html")
+                # 把配置里的「默认时间 / 默认看」注入页面 ——
+                # 否则前端写死「今年」，跟 config.json 不一致
+                # （线上静态版是按配置生成的，两边就对不上了）。
+                wc = (self.cfg.get("网页版") or {})
+                html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+                inject = ("<script>window.__DEFAULT_PRESET__=" + json.dumps(wc.get("默认时间") or "本月")
+                          + ";window.__DEFAULT_SCOPE__=" + json.dumps(wc.get("默认看") or "商场店")
+                          + ";</script>")
+                if "</head>" in html:
+                    html = html.replace("</head>", inject + "\n</head>", 1)
+                body = html.encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(body)
+                return
             if u.path == "/api/status":
                 return self._json({
                     "ok": True,
