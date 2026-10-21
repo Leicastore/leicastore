@@ -41,7 +41,11 @@ jobs:
           python-version: '3.12'
 
       - name: 装依赖
-        run: pip install --quiet openpyxl
+        run: |
+          pip install --quiet openpyxl pillow
+          # 开单提醒要画中文图片，装个中文字体（Pillow 默认字体没有中文）
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fonts-wqy-microhei
 
       # 历史取数的磁盘缓存。GitHub Actions 每次都是全新机器，
       # 不持久化的话每次都会把同比/环比/两个基准重新拉一遍（约 2900 条合同），
