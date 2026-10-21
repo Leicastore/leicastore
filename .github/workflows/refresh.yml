@@ -138,6 +138,35 @@ jobs:
       # 把这次取到的数据存成快照提交回去，下次取数失败才有东西可发。
       # 两个坑：① 快照带 fetchedAt 时间戳，每次都"有变化" —— 所以每天最多提交一次；
       #         ② .gitignore 里有 .heartbeat，git add 不加 -f 会直接报错。
+      # 开单提醒：往企业微信群机器人发一条消息。
+      # 没配 WECOM_WEBHOOK 就自动跳过，不影响发布。
+      # 已通知过的合同号记在 数据/缓存/已通知.json，不会重复发。
+      - name: 开单提醒
+        continue-on-error: true
+        env:
+          WECOM_WEBHOOK: ${{ secrets.WECOM_WEBHOOK }}
+        run: python zb_notify.py
+
+      # 「已通知.json」每个新单都要更新，否则同一单会被反复提醒。
+      # 快照是每天最多提交一次，所以这里单独提交一次。
+      - name: 记录已通知的合同
+        continue-on-error: true
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ ! -f 数据/缓存/已通知.json ]; then
+            echo "没有已通知记录，跳过"
+            exit 0
+          fi
+          git add -f 数据/缓存/已通知.json
+          if git diff --cached --quiet; then
+            echo "已通知记录没变化"
+            exit 0
+          fi
+          git commit -m "chore: 记录已通知合同 [skip ci]"
+          git push || (git pull --rebase --autostash && git push)
+          echo "已提交已通知记录"
+
       - name: 提交快照 + 心跳
         if: steps.gen.outputs.fallback == '0'
         run: |
@@ -149,6 +178,7 @@ jobs:
 
           if [ -f 数据/缓存/看板快照.json ] && [ "$LASTSNAP" != "$TODAY" ]; then
             git add -f 数据/缓存/看板快照.json
+            [ -f 数据/缓存/已通知.json ] && git add -f 数据/缓存/已通知.json
             git commit -m "chore: 更新看板数据快照 [skip ci]"
             git push
             echo "快照已提交（上次 $LASTSNAP，今天 $TODAY）"
