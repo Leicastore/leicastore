@@ -1106,6 +1106,30 @@
     } catch (e) {}
 
     var items = (td['明细'] || []).slice(0, 12);
+    // 「今日销售」要跟着搜索框和人名点选走 —— 点姜帆时只剩姜帆的。
+    // 之前这里没过滤，点谁都是全店的，看着像筛选失效。
+    var fq = (state.q || '').trim();
+    var fstore = state.filterStore || '';
+    var recsAll = (d.records || []).filter(function (r) {
+      return String(r.date).slice(0, 10) === td['日期'];
+    });
+    var recsHit = recsAll.filter(function (r) {
+      if (fq && (r.person || '').indexOf(fq) < 0) return false;
+      if (fstore && (r.store || '') !== fstore) return false;
+      return true;
+    });
+    var filtered = !!(fq || fstore);
+    if (filtered) {
+      items = items.filter(function (it) {
+        if (fq && (it['销售员'] || '').indexOf(fq) < 0) return false;
+        if (fstore && (it['门店'] || '') !== fstore) return false;
+        return true;
+      });
+    }
+    var amtShown = filtered
+      ? recsHit.reduce(function (a, r) { return a + (Number(r.amount) || 0); }, 0)
+      : (td['金额'] || 0);
+    var cntShown = filtered ? recsHit.length : (td['合同数'] || 0);
     var body;
     if (items.length) {
       body = '<div class="today-list">' + items.map(function (it) {
@@ -1124,11 +1148,9 @@
     } else {
       // 产品明细缓存是按天增量抓的，今天的新合同可能还没抓到。
       // 这时退回合同明细 —— 客户备注里一般写了买的什么（"二手Q2 X""M11-P 银"）。
-      var recs = (d.records || []).filter(function (r) {
-        return String(r.date).slice(0, 10) === td['日期'];
-      }).slice(0, 12);
+      var recs = recsHit.slice(0, 12);
       if (!recs.length) {
-        body = '<div class="today-empty">今天还没有成交记录</div>';
+        body = '<div class="today-empty">' + (filtered ? esc(fq || fstore) + ' 今天还没有成交记录' : '今天还没有成交记录') + '</div>';
       } else {
         body = '<div class="today-list">' + recs.map(function (r) {
           return '<div class="today-row">' +
@@ -1146,9 +1168,10 @@
         '<div>' +
           '<div class="t-label">今日销售　TODAY</div>' +
           '<div class="t-date">' + esc(td['日期'] || '') + '　' + wd +
-            '　·　' + (td['合同数'] || 0) + ' 份合同</div>' +
+            '　·　' + cntShown + ' 份合同' +
+            (filtered ? '　·　' + esc(fq || fstore) : '') + '</div>' +
         '</div>' +
-        '<div class="t-total">' + moneyShort(td['金额'] || 0) + ' 元</div>' +
+        '<div class="t-total">' + moneyShort(amtShown) + ' 元</div>' +
       '</div>' + body;
   }
 
@@ -1477,11 +1500,11 @@
     $('q').addEventListener('input', function () {
       var v = this.value;
       clearTimeout(qt);
-      qt = setTimeout(function () { state.q = v; renderDetail(); writeHash(); }, 200);
+      qt = setTimeout(function () { state.q = v; renderDetail(); renderToday(); writeHash(); }, 200);
     });
 
     $('filterStore').addEventListener('change', function () {
-      state.filterStore = this.value; renderDetail(); writeHash();
+      state.filterStore = this.value; renderDetail(); renderToday(); writeHash();
     });
 
     document.addEventListener('click', function (e) {
