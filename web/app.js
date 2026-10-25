@@ -408,6 +408,7 @@
       state.data = pre || STATIC;
       assignColors(state.data);
       try { syncChips(); } catch (e) {}
+      try { updateStaticBar(); } catch (e) {}
       render();
       loading(false);
       return;
@@ -1100,7 +1101,11 @@
     if (!box) return;
     var d = state.data || {};
     var td = d['今日'];
-    if (!td) { box.style.display = 'none'; return; }
+    // 只有「数据区间包含今天」时今日卡片才有意义。
+    // 看「上月」时显示「今日 0 元 / 今天还没有成交」是误导，直接隐藏。
+    var covers = !!(td && d.range && td['日期'] &&
+                    td['日期'] >= (d.range.start || '') && td['日期'] <= (d.range.end || ''));
+    if (!td || !covers) { box.style.display = 'none'; return; }
     box.style.display = '';
 
     var wd = '';
@@ -1177,6 +1182,17 @@
         '</div>' +
         '<div class="t-total">' + moneyShort(amtShown) + ' 元</div>' +
       '</div>' + body;
+  }
+
+  // 切换区间后，顶部说明条要跟着变（原来一直写着生默认那份的区间）
+  function updateStaticBar() {
+    var d = state.data || {};
+    var when = $('staticWhen');
+    if (when) when.textContent = d.fetchedAt || '';
+    var rg = $('staticRange');
+    if (rg && d.range) rg.textContent = (d.range.start || '不限') + ' ~ ' + (d.range.end || '不限');
+    var t = d.title;
+    if (t) document.title = t;
   }
 
   function renderGoal() {
@@ -1589,7 +1605,7 @@
     bar.innerHTML =
       '<b>数据快照</b>　更新于 <span id="staticWhen">' + when + '</span>' +
       '<span class="static-age" id="staticAge"></span>' +
-      '　·　区间 ' + span + '　·　范围 ' + esc(STATIC.scope || '');
+      '　·　区间 <span id="staticRange">' + span + '</span>　·　范围 ' + esc(STATIC.scope || '');
     var wrap = document.querySelector('.wrap');
     if (wrap) wrap.insertBefore(bar, wrap.firstChild);
 
