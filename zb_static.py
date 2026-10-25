@@ -92,7 +92,7 @@ def _cached_fetch(erp, e: dict, start: str, end: str, ttl_days: int = 7):
     return fetch
 
 
-def _render(payload: dict, out_file: Path, log=print) -> Path:
+def _render(payload: dict, out_file: Path, log=print, presets: dict | None = None) -> Path:
     """把 payload 渲染成自包含的单文件 HTML"""
     html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
     css = (WEB_DIR / "style.css").read_text(encoding="utf-8")
@@ -103,6 +103,11 @@ def _render(payload: dict, out_file: Path, log=print) -> Path:
         return json.dumps(o, ensure_ascii=False, default=str).replace("<", "\\u003c")
 
     boot = "<script>window.__STATIC__=1;window.__DATA__=" + dump(payload) + ";"
+    # 多区间：把每个预设的整份数据都嵌进来，前端切换时不用联网。
+    # 只有当月那份要实时拉，其余（上月/去年…）都是历史数据，走 7 天缓存，几乎不增加 ERP 压力。
+    presets = presets or {}
+    if len(presets) > 1:
+        boot += "window.__PRESETS__=" + dump(presets) + ";"
     boot += "</script>"
 
     html = html.replace('<link rel="stylesheet" href="style.css">',
@@ -141,7 +146,7 @@ def build_offline(out_file: Path, log=print) -> Path:
 
 
 def build(cfg: dict, scope: str, start: str, end: str, out_file: Path, log=print,
-          preset: str = "") -> Path:
+          preset: str = "", extra: list[str] | None = None) -> Path:
     e = cfg.get("智邦ERP") or {}
     if not e.get("地址"):
         raise SystemExit("config.json 里「智邦ERP」没配好。")
@@ -181,7 +186,27 @@ def build(cfg: dict, scope: str, start: str, end: str, out_file: Path, log=print
     except Exception as exc:
         log(f"  （快照存不下：{exc}）")
 
-    return _render(payload, out_file, log=log)
+    # ---- 其它区间也一起生成（上月/今年…），嵌进同一个页面 ----
+    # 这些区间都是历史数据，_cached_fetch 会命中 7 天缓存，不会反复打 ERP。
+    presets = {}
+    if preset:
+        presets[preset] = payload
+    for name in (extra or []):
+        if not name or name in presets:
+            continue
+        try:
+            s2, e2 = W.resolve_range(name)
+            log(f"  另取「{name}」（{s2} ~ {e2}）...")
+            rows2 = fetch(s2, e2)
+            cmp2 = W.build_compares(cfg, s2, e2, scope, fetch)
+            p2 = W.build_payload(cfg, rows2, scope, s2, e2, cmp2, svc, log=log)
+            p2["preset"] = name
+            presets[name] = p2
+            log(f"    「{name}」{len(rows2)} 条合同，已并入页面")
+        except Exception as exc:
+            log(f"    「{name}」取不到，跳过：{exc}")
+
+    return _render(payload, out_file, log=log, presets=presets)
 
 
 def main(argv=None) -> int:
@@ -199,10 +224,14 @@ def main(argv=None) -> int:
     wc = cfg.get("网页版", {}) or {}
 
     scope = args.范围 or wc.get("默认看") or "商场店"
+    # --时间 可以写「本月,上月」：第一个是打开时显示的，后面几个也一起生成
+    wants = [x.strip() for x in (args.时间 or "").split(",") if x.strip()]
+    if not wants:
+        wants = [wc.get("默认时间") or "本月"]
     if args.开始 or args.结束:
         start, end = args.开始, args.结束
     else:
-        start, end = W.resolve_range(args.时间 or wc.get("默认时间") or "今年")
+        start, end = W.resolve_range(wants[0])
 
     print("=" * 58)
     print("  生成静态看板" + ("（离线模式）" if args.离线 else ""))
@@ -212,7 +241,7 @@ def main(argv=None) -> int:
             out = build_offline(Path(args.输出))
         else:
             out = build(cfg, scope, start, end, Path(args.输出),
-                        preset=(args.时间 or (wc.get("默认时间") or "")))
+                        preset=wants[0], extra=wants[1:])
     except ErpError as exc:
         print(f"\n  [X] ERP 出错：{exc}")
         return 2

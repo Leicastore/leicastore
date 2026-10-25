@@ -108,7 +108,7 @@ jobs:
         if: steps.cfg.outputs.have == '1'
         run: |
           set +e
-          python zb_static.py --范围 商场店 --时间 本月 --输出 public/index.html
+          python zb_static.py --范围 商场店 --时间 本月,上月 --输出 public/index.html
           RC=$?
           set -e
           if [ "$RC" -ne 0 ]; then

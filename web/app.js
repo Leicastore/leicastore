@@ -403,8 +403,11 @@
   function load(opts) {
     opts = opts || {};
     if (STATIC) {                    // 静态页：直接用嵌好的数据，不请求接口
-      state.data = STATIC;
-      assignColors(STATIC);
+      // 页面里可能嵌了好几个区间（本月/上月…），按当前选的取对应那份
+      var pre = (window.__PRESETS__ || {})[state.preset];
+      state.data = pre || STATIC;
+      assignColors(state.data);
+      try { syncChips(); } catch (e) {}
       render();
       loading(false);
       return;
@@ -1563,7 +1566,8 @@
     try { history.replaceState(null, '', location.pathname + location.hash); } catch (e) {}
     // 顶部区间按钮的高亮要跟着实际数据走 —— 静态页可能生成的是「本月」，
     // 不设这个就会出现"数据是本月、却亮着今年"的错位。
-    if (STATIC.preset) state.preset = STATIC.preset;
+    var have = window.__PRESETS__ || {};
+    if (!have[state.preset] && STATIC.preset) state.preset = STATIC.preset;
     try { syncChips(); } catch (e) {}
     var when = esc(STATIC.fetchedAt || '');
     var span = esc((STATIC.range && STATIC.range.start) || '不限') + ' ~ ' +
@@ -1629,11 +1633,31 @@
       var el = $(id);
       if (el) { el.disabled = true; el.classList.add('off'); el.title = '静态页面，没有后台服务'; }
     });
-    ['scopeChips', 'rangeChips'].forEach(function (id) {
-      var el = $(id);
-      if (el) Array.prototype.forEach.call(el.querySelectorAll('.chip'), function (c) {
-        c.classList.add('off');
+    // 区间按钮：页面里嵌了哪几个区间，就把那几个放开（其余保持灰色）
+    var presets = window.__PRESETS__ || {};
+    var rc = $('rangeChips');
+    if (rc) {
+      Array.prototype.forEach.call(rc.querySelectorAll('.chip'), function (c) {
+        var has = !!(presets[c.dataset.preset]);
+        if (has) {
+          c.classList.remove('off');
+          c.title = '这个区间有预生成的数据';
+          c.addEventListener('click', function () {
+            if (state.preset === c.dataset.preset) return;
+            state.preset = c.dataset.preset;
+            state.start = state.end = '';
+            state.custom = false;
+            load({});
+          });
+        } else {
+          c.classList.add('off');
+          c.title = '这个区间没有预生成数据（线上只放了有数据的几个）';
+        }
       });
+    }
+    var sc2 = $('scopeChips');
+    if (sc2) Array.prototype.forEach.call(sc2.querySelectorAll('.chip'), function (c) {
+      c.classList.add('off');
     });
     ['dFrom', 'dTo'].forEach(function (id) {
       var el = $(id);
