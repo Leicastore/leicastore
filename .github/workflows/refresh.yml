@@ -153,6 +153,15 @@ jobs:
 
       # 「已通知.json」每个新单都要更新，否则同一单会被反复提醒。
       # 快照是每天最多提交一次，所以这里单独提交一次。
+      # 全员业绩排名：一天发一次（默认 20 点后第一次运行），发到另一个群。
+      # 没配 WECOM_WEBHOOK_RANK 就自动跳过。
+      - name: 业绩排名推送
+        continue-on-error: true
+        env:
+          WECOM_WEBHOOK_RANK: ${{ secrets.WECOM_WEBHOOK_RANK }}
+          TZ: Asia/Shanghai
+        run: python zb_rank_notify.py
+
       - name: 记录已通知的合同
         continue-on-error: true
         run: |
@@ -162,7 +171,8 @@ jobs:
             echo "没有已通知记录，跳过"
             exit 0
           fi
-          git add -f 数据/缓存/已通知.json
+          git add -f 数据/缓存/已通知.json 2>/dev/null || true
+          [ -f 数据/缓存/已发排名.json ] && git add -f 数据/缓存/已发排名.json
           if git diff --cached --quiet; then
             echo "已通知记录没变化"
             exit 0
@@ -183,6 +193,7 @@ jobs:
           if [ -f 数据/缓存/看板快照.json ] && [ "$LASTSNAP" != "$TODAY" ]; then
             git add -f 数据/缓存/看板快照.json
             [ -f 数据/缓存/已通知.json ] && git add -f 数据/缓存/已通知.json
+            [ -f 数据/缓存/已发排名.json ] && git add -f 数据/缓存/已发排名.json
             git commit -m "chore: 更新看板数据快照 [skip ci]"
             git push
             echo "快照已提交（上次 $LASTSNAP，今天 $TODAY）"
