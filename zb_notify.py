@@ -264,6 +264,13 @@ def main() -> int:
         no = str(r.get("no") or "")
         if no:
             seen.add(no)
+    # 给"排名推送"留个标记：这一轮有新单，排名也顺带发一份。
+    # 用文件当标记是因为 GitHub Actions 每次都是新机器，同一次运行内可靠。
+    try:
+        (BASE / "数据/缓存/本次有新单.flag").write_text("1", encoding="utf-8")
+    except Exception:
+        pass
+
     STATE.parent.mkdir(parents=True, exist_ok=True)
     STATE.write_text(json.dumps({
         "已通知": sorted(seen)[-MAX_KEEP:],

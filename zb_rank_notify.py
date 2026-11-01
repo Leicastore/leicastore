@@ -207,6 +207,15 @@ def render(snap: dict, out: Path):
 def main() -> int:
     hook = (os.environ.get("WECOM_WEBHOOK_RANK") or "").strip()
     if not hook:
+        # 本地定时任务用：地址存在这个文件里，不提交到仓库（仓库是公开的）
+        f = BASE / "数据/缓存/排名webhook.txt"
+        try:
+            hook = f.read_text(encoding="utf-8").strip()
+            if hook:
+                print("  从本地文件读取 webhook")
+        except Exception:
+            hook = ""
+    if not hook:
         print("  没配 WECOM_WEBHOOK_RANK，跳过排名推送")
         return 0
 
@@ -218,19 +227,11 @@ def main() -> int:
     now = _dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(hours=8)
     today = now.strftime("%Y-%m-%d")
 
-    hour = 20
-    try:
-        hour = int((_load(BASE / "config.json", {}) or {})
-                   .get("网页版", {}).get("排名推送时间", 20))
-    except Exception:
-        pass
-    if now.hour < hour:
-        print(f"  还没到 {hour} 点（现在 {now.hour} 点），今天晚点再发")
-        return 0
-
-    state = _load(STATE, {})
-    if state.get("日期") == today:
-        print(f"  今天（{today}）已经发过排名了")
+    # 和开单提醒同一时机：这一轮有新单才发排名。
+    # 开单提醒发成功后会写 本次有新单.flag，这里检查它。
+    flag = BASE / "数据/缓存/本次有新单.flag"
+    if not flag.exists() and (os.environ.get("RANK_FORCE") or "") != "1":
+        print("  这一轮没有新开单，排名不发（和开单提醒保持同步）")
         return 0
 
     print("  生成排名图 …")
@@ -254,10 +255,10 @@ def main() -> int:
         print("  没发出去，不记状态，下次重试")
         return 1
 
-    STATE.parent.mkdir(parents=True, exist_ok=True)
-    STATE.write_text(json.dumps({"日期": today,
-                                 "时间": now.strftime("%H:%M:%S")},
-                                ensure_ascii=False, indent=1), encoding="utf-8")
+    try:
+        flag.unlink()
+    except Exception:
+        pass
     print(f"  已推送 {today} 的排名")
     return 0
 

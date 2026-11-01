@@ -10,3 +10,6 @@ __pycache__/
 
 # 心跳文件（工作流自己维护）
 .heartbeat
+
+# 排名推送的 webhook（本机私有，绝不进仓库）
+数据/缓存/排名webhook.txt
