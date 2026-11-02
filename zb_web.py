@@ -1028,6 +1028,13 @@ def build_payload(cfg: dict, rows: list[dict], scope: str, start: str, end: str,
     payload["产品缓存合同数"] = st.get("缓存合同数") or 0
     payload["今日"] = st.get("今日") or None
 
+    # 这个区间里扣掉了多少退货金额（合同金额已改成净额）
+    try:
+        import zb_erp as _e3
+        payload["退货金额"] = round(float(_e3.returns_of(start, end)), 2)
+    except Exception:
+        payload["退货金额"] = 0.0
+
     # 业绩口径：把「没发货所以没算进来」的合同也报出来，
     # 否则页面数字和 ERP 合同列表对不上，店长会以为看板算错了。
     try:

@@ -482,6 +482,9 @@
           moneyShort(kj['排除金额'] || 0) + ' 元未发货，未计入）';
       }
     }
+    if ((d['退货金额'] || 0) > 0) {
+      kjTxt += '　·　已扣退货 ' + moneyShort(d['退货金额']) + ' 元';
+    }
     $('metaLine').textContent =
       '数据区间 ' + rangeTxt +
       '　|　ERP 合同 ' + int(d.rawCount) + ' 条　|　纳入统计 ' + int(d.totals.count) + ' 条' +

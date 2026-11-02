@@ -172,7 +172,8 @@ jobs:
             exit 0
           fi
           git add -f 数据/缓存/已通知.json 2>/dev/null || true
-          [ -f 数据/缓存/已发排名.json ] && git add -f 数据/缓存/已发排名.json
+          [ -f 数据/缓存/已发排名.json ] && git add -f 数据/缓存/已发排名.json 2>/dev/null || true
+          [ -f 数据/缓存/退货金额.json ] && git add -f 数据/缓存/退货金额.json
           if git diff --cached --quiet; then
             echo "已通知记录没变化"
             exit 0
@@ -194,6 +195,7 @@ jobs:
             git add -f 数据/缓存/看板快照.json
             [ -f 数据/缓存/已通知.json ] && git add -f 数据/缓存/已通知.json
             [ -f 数据/缓存/已发排名.json ] && git add -f 数据/缓存/已发排名.json
+            [ -f 数据/缓存/退货金额.json ] && git add -f 数据/缓存/退货金额.json
             git commit -m "chore: 更新看板数据快照 [skip ci]"
             git push
             echo "快照已提交（上次 $LASTSNAP，今天 $TODAY）"

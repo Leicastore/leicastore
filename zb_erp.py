@@ -190,6 +190,51 @@ class ZbErp:
         return [dict(zip(cols, r)) for r in (d.get("Rows") or [])]
 
     # ---------------------------------------------------------- 合同产品明细
+    def bill_detail(self, ord_) -> dict:
+        """取一份合同的明细：产品行 + 退货金额 + 发货/出库状态。
+
+        以前只拿了 productList，把「退货金额」漏了 ——
+        有的合同挂着退货但金额没扣，业绩就虚高了。
+        退货金额在 baseInfo 里，格式是 "63,500.00/0.00"，取斜杠前面那个。
+        """
+        d = self.asp_call(PATH_BILL_DETAIL, "", {"ord": ord_})
+        groups = ((d.get("body") or {}).get("bill") or {}).get("groups") or []
+
+        def fields_of(gid):
+            for g in groups:
+                if g.get("id") == gid:
+                    return g.get("fields") or []
+            return []
+
+        def text_of(gid, caption):
+            for f in fields_of(gid):
+                if (f.get("caption") or "") == caption:
+                    return core.cell_text(f.get("text"))
+            return ""
+
+        back_raw = text_of("baseInfo", "退货金额")
+        back = core.to_money(str(back_raw).split("/")[0]) if back_raw else 0.0
+
+        prods: list[dict] = []
+        for g in groups:
+            if g.get("id") != "productList":
+                continue
+            fl = g.get("fields") or []
+            if not fl:
+                break
+            tb = (fl[0].get("source") or {}).get("table") or {}
+            cols = [c["id"] if isinstance(c, dict) else c for c in (tb.get("cols") or [])]
+            prods = [dict(zip(cols, r)) for r in (tb.get("rows") or [])]
+            break
+
+        return {
+            "产品": prods,
+            "退货金额": round(back, 2),
+            "发货状态": text_of("baseInfo", "发货状态"),
+            "出库状态": text_of("baseInfo", "出库状态"),
+            "优惠后总额": core.to_money(text_of("baseInfo", "优惠后总额").replace("RMB", "")),
+        }
+
     def bill_products(self, ord_) -> list[dict]:
         """取一份合同的产品明细行"""
         d = self.asp_call(PATH_BILL_DETAIL, "", {"ord": ord_})
@@ -225,12 +270,38 @@ class ZbErp:
         todo = [c for c in contracts if str(c["ord"]) not in cache]
         log(f"  需要抓取 {len(todo)} 份（共 {len(contracts)} 份）")
 
+        # 退货金额：老合同也要记，所以已有缓存里没记过的也要补
+        _back = dict(load_return_map())
+        need_back = {str(c["ord"]) for c in contracts} - set(_back)
+
+        # 已经抓过产品、但还没记过退货金额的合同：补查一次
+        extra = [c for c in contracts
+                 if str(c["ord"]) in cache and str(c["ord"]) in need_back]
+        if extra:
+            log(f"  补查 {len(extra)} 份的退货金额（只调一次接口）…")
+            for i, c in enumerate(extra, 1):
+                ord_ = str(c["ord"])
+                try:
+                    det = self.bill_detail(ord_)
+                    _back[ord_] = det["退货金额"] or 0.0
+                except Exception:
+                    pass
+                # 每 25 份存一次 —— 这个循环要跑十几分钟，中途断了不能白跑
+                if i % 25 == 0:
+                    save_return_map(_back)
+                    log(f"    退货金额进度 {i}/{len(extra)}")
+                time.sleep(delay)
+            save_return_map(_back)
+
         done = 0
         for c in todo:
             ord_ = str(c["ord"])
             for attempt in range(max_retry):
                 try:
-                    cache[ord_] = self.bill_products(ord_)
+                    det = self.bill_detail(ord_)
+                    cache[ord_] = det["产品"]
+                    if det["退货金额"]:
+                        _back.setdefault(ord_, det["退货金额"])
                     break
                 except ErpSessionDown:
                     # 服务端会话挂了，保存进度并立刻停手
@@ -249,8 +320,11 @@ class ZbErp:
             time.sleep(delay)
 
         cache_path.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
-        filled = sum(1 for v in cache.values() if v)
-        log(f"  完成：{len(cache)} 份合同，其中 {filled} 份有产品明细")
+        save_return_map(_back)
+        filled_pl = sum(1 for v in cache.values() if v)
+        nz = sum(1 for v in _back.values() if v)
+        log(f"  完成：{len(cache)} 份合同，其中 {filled_pl} 份有产品明细；"
+            f"有退货的 {nz} 份，退货金额合计 {sum(_back.values()):,.2f}")
         return cache
 
     def contracts(self, date_from: str = "", date_to: str = "", page_size: int = 300,
@@ -295,6 +369,7 @@ class ZbErp:
 
         if cfg is not None:
             rows = _apply_status_filter(rows, cfg, date_from, date_to)
+        rows = _apply_returns(rows, date_from, date_to)
         return rows
 
 
@@ -315,6 +390,73 @@ FIELD_MAP = [
 ]
 
 HEADERS = [h for h, _ in FIELD_MAP]
+
+
+# 退货金额缓存：{合同ord: 退货金额}。由「抓取产品明细」时顺手写，
+# 不额外增加 ERP 请求（那个流程本来就要逐单调 BillService）。
+RETURN_CACHE_REL = "数据/缓存/退货金额.json"
+return_map_cache: dict | None = None
+
+
+def load_return_map() -> dict:
+    global return_map_cache
+    if return_map_cache is not None:
+        return return_map_cache
+    try:
+        raw = json.loads((core.BASE / RETURN_CACHE_REL).read_text(encoding="utf-8"))
+        return_map_cache = {str(k): float(v or 0) for k, v in (raw or {}).items()
+                            if isinstance(v, (int, float, str))}
+        # 兼容 {ord: {"退货金额": x}} 的写法
+        fixed = {}
+        for k, v in (raw or {}).items():
+            if isinstance(v, dict):
+                fixed[str(k)] = float(v.get("退货金额") or 0)
+            else:
+                fixed[str(k)] = float(v or 0)
+        return_map_cache = fixed
+    except Exception:
+        return_map_cache = {}
+    return return_map_cache
+
+
+def save_return_map(m: dict) -> None:
+    global return_map_cache
+    (core.BASE / RETURN_CACHE_REL).parent.mkdir(parents=True, exist_ok=True)
+    # 零退货也要存：下次才能靠「表里有没有」判断要不要补查，
+    # 只存非零的话每次都会把全部合同重查一遍（十几分钟）。
+    (core.BASE / RETURN_CACHE_REL).write_text(
+        json.dumps({k: v for k, v in sorted(m.items())}, ensure_ascii=False, indent=0),
+        encoding="utf-8")
+    return_map_cache = m
+
+
+# 按区间记：这一批合同里有多少退货金额
+returns_by_range: dict = {}
+
+
+def returns_of(date_from: str, date_to: str) -> float:
+    return float(returns_by_range.get((date_from, date_to)) or 0.0)
+
+
+def _apply_returns(rows: list[dict], _from: str = "", _to: str = "") -> list[dict]:
+    """把退货金额从合同金额里扣掉（moneyall 改成净额，原值留在 moneyall_原）"""
+    m = load_return_map()
+    if not m:
+        returns_by_range[(_from, _to)] = 0.0
+        return rows
+    total = 0.0
+    for r in rows:
+        ord_ = str(r.get("ord") or "")
+        back = m.get(ord_) or 0.0
+        if not back:
+            continue
+        gross = core.to_money(r.get("moneyall"))
+        r["moneyall_原"] = gross
+        r["moneyall"] = round(gross - back, 2)
+        r["退货金额"] = back
+        total += back
+    returns_by_range[(_from, _to)] = round(total, 2)
+    return rows
 
 
 # 被「业绩口径」排除掉的合同，按区间分开记。
