@@ -68,10 +68,11 @@ def _cached_fetch(erp, e: dict, start: str, end: str, ttl_days: int = 7, cfg: di
     所以只缓存「非当期」的区间，7 天失效一次。当期数据永远实时去拿。
     """
     def fetch(a, b):
-        # 当期数据不缓存 —— 要的就是最新
+        # 当期数据不缓存 —— 要的就是最新。
+        # 注意 cfg 传 None：缓存和取数都要**原始数据**，口径在拿到之后再套，
+        # 否则改了「业绩口径」开关，缓存里存的还是老口径，切不回来。
         if (a, b) == (start, end):
-            return erp.contracts(a, b, page_size=int(e.get("每页条数") or 300),
-                                 log=None, cfg=cfg)
+            return erp.contracts(a, b, page_size=int(e.get("每页条数") or 300), log=None)
 
         FETCH_CACHE.mkdir(parents=True, exist_ok=True)
         key = f"{a or 'x'}_{b or 'x'}.json".replace(":", "")
@@ -89,12 +90,14 @@ def _cached_fetch(erp, e: dict, start: str, end: str, ttl_days: int = 7, cfg: di
                     return got
                 except Exception:
                     pass
-        rows = erp.contracts(a, b, page_size=int(e.get("每页条数") or 300),
-                             log=None, cfg=cfg)
+        rows = erp.contracts(a, b, page_size=int(e.get("每页条数") or 300), log=None)
         try:
             p.write_text(json.dumps(rows, ensure_ascii=False, default=str), encoding="utf-8")
         except Exception:
             pass
+        if cfg is not None:
+            import zb_erp as _e
+            rows = _e._apply_status_filter(rows, cfg, a, b)
         return rows
 
     return fetch

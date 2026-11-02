@@ -55,9 +55,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: 数据/缓存/历史取数
-          key: hist-fetch-${{ github.run_id }}
+          key: hist-fetch2-${{ github.run_id }}
           restore-keys: |
-            hist-fetch-
+            hist-fetch2-
 
       - name: 写入 ERP 配置
         id: cfg
