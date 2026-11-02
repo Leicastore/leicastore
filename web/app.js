@@ -473,10 +473,19 @@
     $('brandSub').textContent = d.scope === '商场店' ? '三个商场店' : '全部渠道';
     var rangeTxt = (d.range.start || d.range.end)
       ? (d.range.start || '不限') + ' ~ ' + (d.range.end || '不限') : '全部时间';
+    var kj = d['口径'] || {};
+    var kjTxt = '';
+    if (kj['只看已发已出']) {
+      kjTxt = '　|　业绩口径：只算发货完毕 + 出库完毕';
+      if (kj['排除单数']) {
+        kjTxt += '（另有 ' + int(kj['排除单数']) + ' 单 ' +
+          moneyShort(kj['排除金额'] || 0) + ' 元未发货，未计入）';
+      }
+    }
     $('metaLine').textContent =
       '数据区间 ' + rangeTxt +
       '　|　ERP 合同 ' + int(d.rawCount) + ' 条　|　纳入统计 ' + int(d.totals.count) + ' 条' +
-      '　|　抓取于 ' + d.fetchedAt + '　|　口径：合同金额（优惠后）· 签订日期';
+      '　|　抓取于 ' + d.fetchedAt + '　|　按签订日期' + kjTxt;
 
     if (!state.start && !state.end) {
       $('dFrom').value = d.range.start || '';

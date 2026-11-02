@@ -727,3 +727,28 @@ def task_of(cfg: dict, store: str, span: float) -> dict | None:
     if std:
         r["标准"] = round(float(std) * 10000 * span, 2)
     return r
+
+
+# --------------------------------------------------------------------------
+# 业绩口径：只算「发货完毕 + 出库完毕」的合同
+# --------------------------------------------------------------------------
+def status_rule(cfg: dict) -> dict:
+    """把 config 里的「业绩口径」整理成好用的形式"""
+    r = (cfg.get("业绩口径") or {})
+    return {
+        "on": bool(r.get("只看发货和出库完毕", True)),
+        "fk": r.get("发货字段") or "fhjz",
+        "fv": r.get("发货完毕值") or "发货完毕",
+        "ck": r.get("出库字段") or "ckjz",
+        "cv": r.get("出库完毕值") or "出库完毕",
+    }
+
+
+def shipped_ok(row: dict, cfg: dict) -> bool:
+    """这份合同算不算业绩：发货、出库都到位了才算"""
+    r = status_rule(cfg)
+    if not r["on"]:
+        return True
+    f = cell_text(row.get(r["fk"]))
+    c = cell_text(row.get(r["ck"]))
+    return f == r["fv"] and c == r["cv"]

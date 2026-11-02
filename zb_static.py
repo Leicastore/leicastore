@@ -56,7 +56,7 @@ SNAP = Path(__file__).resolve().parent / "数据/缓存/看板快照.json"
 FETCH_CACHE = Path(__file__).resolve().parent / "数据/缓存/历史取数"
 
 
-def _cached_fetch(erp, e: dict, start: str, end: str, ttl_days: int = 7):
+def _cached_fetch(erp, e: dict, start: str, end: str, ttl_days: int = 7, cfg: dict | None = None):
     """给「历史区间」的取数加磁盘缓存。
 
     为什么：GitHub Actions 每次都是全新进程，内存缓存用不上。
@@ -70,7 +70,8 @@ def _cached_fetch(erp, e: dict, start: str, end: str, ttl_days: int = 7):
     def fetch(a, b):
         # 当期数据不缓存 —— 要的就是最新
         if (a, b) == (start, end):
-            return erp.contracts(a, b, page_size=int(e.get("每页条数") or 300), log=None)
+            return erp.contracts(a, b, page_size=int(e.get("每页条数") or 300),
+                                 log=None, cfg=cfg)
 
         FETCH_CACHE.mkdir(parents=True, exist_ok=True)
         key = f"{a or 'x'}_{b or 'x'}.json".replace(":", "")
@@ -79,10 +80,15 @@ def _cached_fetch(erp, e: dict, start: str, end: str, ttl_days: int = 7):
             age_days = (_dt.datetime.now().timestamp() - p.stat().st_mtime) / 86400
             if age_days < ttl_days:
                 try:
-                    return json.loads(p.read_text(encoding="utf-8"))
+                    got = json.loads(p.read_text(encoding="utf-8"))
+                    # 老缓存存的是未过滤的合同，这里补一道口径过滤
+                    if cfg is not None:
+                        got = [r for r in got if core.shipped_ok(r, cfg)]
+                    return got
                 except Exception:
                     pass
-        rows = erp.contracts(a, b, page_size=int(e.get("每页条数") or 300), log=None)
+        rows = erp.contracts(a, b, page_size=int(e.get("每页条数") or 300),
+                             log=None, cfg=cfg)
         try:
             p.write_text(json.dumps(rows, ensure_ascii=False, default=str), encoding="utf-8")
         except Exception:
@@ -157,7 +163,7 @@ def build(cfg: dict, scope: str, start: str, end: str, out_file: Path, log=print
     erp.login(log=lambda *_: None)
     log(f"  取数 {start or '不限'} ~ {end or '不限'} ...")
     # 历史区间走磁盘缓存，当期数据永远实时拉
-    fetch = _cached_fetch(erp, e, start, end)
+    fetch = _cached_fetch(erp, e, start, end, cfg=cfg)
     rows = fetch(start, end)
     log(f"    拿到 {len(rows)} 条合同")
 

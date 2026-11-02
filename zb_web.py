@@ -575,6 +575,7 @@ class DataService:
         erp = self._erp()
         erp.login(log=lambda *_: None)
         rows = erp.contracts(start, end, page_size=int((self.cfg.get("智邦ERP") or {}).get("每页条数") or 300),
+                              cfg=self.cfg,
                              log=None)
         with self.lock:
             self.cache[key] = (time.time(), rows)
@@ -1001,7 +1002,14 @@ def build_payload(cfg: dict, rows: list[dict], scope: str, start: str, end: str,
     # 页面上就会显示一个比实际早 8 小时的时间，看着像"数据很久没更新"。
     payload["fetchedAt"] = (_dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(hours=8)
                             ).strftime("%Y-%m-%d %H:%M:%S")
-    payload["rawCount"] = len(rows)
+    # ERP 里这个区间的合同总数 = 纳入统计的 + 因为没发货被排除的
+    _drop_n = 0
+    try:
+        import zb_erp as _e2
+        _drop_n = int((_e2.dropped_of(start, end) or {}).get("单数") or 0)
+    except Exception:
+        _drop_n = 0
+    payload["rawCount"] = len(rows) + _drop_n
     payload["title"] = cfg.get("报表标题") or "门店业绩看板"
 
     try:
@@ -1019,6 +1027,22 @@ def build_payload(cfg: dict, rows: list[dict], scope: str, start: str, end: str,
     payload["型号基准区间"] = st.get("基准区间") or None
     payload["产品缓存合同数"] = st.get("缓存合同数") or 0
     payload["今日"] = st.get("今日") or None
+
+    # 业绩口径：把「没发货所以没算进来」的合同也报出来，
+    # 否则页面数字和 ERP 合同列表对不上，店长会以为看板算错了。
+    try:
+        import zb_erp as _erp
+        rd = _erp.dropped_of(start, end) if hasattr(_erp, "dropped_of") else {}
+        rule = core.status_rule(cfg)
+        payload["口径"] = {
+            "只看已发已出": bool(rule["on"]),
+            "说明": ("只统计「发货完毕」且「出库完毕」的合同" if rule["on"] else "统计全部合同"),
+            "排除单数": int(rd.get("单数") or 0),
+            "排除金额": float(rd.get("金额") or 0),
+            "排除明细": (rd.get("明细") or [])[:20],
+        }
+    except Exception:
+        payload["口径"] = None
 
     # 强制型号台数（每人至少卖几台）—— config.json 配置
     raw = {k: v for k, v in ((cfg.get("强制型号台数") or {}).items())

@@ -254,8 +254,12 @@ class ZbErp:
         return cache
 
     def contracts(self, date_from: str = "", date_to: str = "", page_size: int = 300,
-                  log=print, max_pages: int = 100) -> list[dict]:
-        """拉取合同列表，返回 [{列名: 值}]"""
+                  log=print, max_pages: int = 100, cfg: dict | None = None) -> list[dict]:
+        """拉取合同列表，返回 [{列名: 值}]
+
+        cfg 给了就按「业绩口径」过滤：只保留「发货完毕 + 出库完毕」的合同。
+        被排除的（未发货 / 部分发货 / 未出库）记在 last_dropped 里，
+        页面会显示「另有 N 单 X 元未计入」，免得和 ERP 对不上账。"""
         rows: list[dict] = []
         cols: list[str] = []
         page_index = 1
@@ -289,6 +293,8 @@ class ZbErp:
                 break
             page_index += 1
 
+        if cfg is not None:
+            rows = _apply_status_filter(rows, cfg, date_from, date_to)
         return rows
 
 
@@ -309,6 +315,37 @@ FIELD_MAP = [
 ]
 
 HEADERS = [h for h, _ in FIELD_MAP]
+
+
+# 被「业绩口径」排除掉的合同，按区间分开记。
+# 必须按区间分开：一次构建会取好几段（当期 / 同比 / 环比 / 12个月基准），
+# 用单个全局变量会被后一段覆盖，"未计入"就变成了 12 个月的和。
+dropped_by_range: dict = {}
+
+
+def dropped_of(date_from: str, date_to: str) -> dict:
+    return dropped_by_range.get((date_from, date_to)) or {"单数": 0, "金额": 0.0, "明细": []}
+
+
+def _apply_status_filter(rows: list[dict], cfg: dict,
+                        _from: str = "", _to: str = "") -> list[dict]:
+    """只留发货完毕 + 出库完毕的合同，其余记到 last_dropped"""
+    keep, drop = [], []
+    for r in rows:
+        (keep if core.shipped_ok(r, cfg) else drop).append(r)
+
+    rec = {"单数": len(drop),
+           "金额": round(sum(core.to_money(r.get("moneyall")) for r in drop), 2)}
+    rec["明细"] = [
+        {"合同号": core.cell_text(r.get("htid")),
+         "销售员": clean_person(r.get("xsry")),
+         "金额": round(core.to_money(r.get("moneyall")), 2),
+         "发货": core.cell_text(r.get("fhjz")),
+         "出库": core.cell_text(r.get("ckjz"))}
+        for r in drop
+    ]
+    dropped_by_range[(_from, _to)] = rec
+    return keep
 
 
 def clean_person(raw: str) -> str:

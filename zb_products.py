@@ -463,7 +463,7 @@ def load_items(cfg: dict, tag: str = "", log=print):
     d_from, d_to = dr.get("开始") or "", dr.get("结束") or ""
     erp = ZbErp(e["地址"], e["账号"], e["密码"], e.get("串号") or "zb-scraper-01")
     erp.login(log=lambda *_: None)
-    contracts = erp.contracts(d_from, d_to, page_size=300, log=None)
+    contracts = erp.contracts(d_from, d_to, page_size=300, log=None, cfg=cfg)
     log(f"  合同 {len(contracts)} 份，产品缓存 {len(cache)} 份")
     items = classify_all(cache, contracts, cfg)
     log(f"  产品行 {len(items)} 条")
@@ -489,7 +489,7 @@ def main(argv=None) -> int:
         d_from, d_to = dr.get("开始") or "", dr.get("结束") or ""
         erp = ZbErp(e["地址"], e["账号"], e["密码"], e.get("串号") or "zb-scraper-01")
         erp.login()
-        contracts = erp.contracts(d_from, d_to, page_size=300, log=None)
+        contracts = erp.contracts(d_from, d_to, page_size=300, log=None, cfg=cfg)
         print(f"合同 {len(contracts)} 份，开始温柔抓取产品明细（单线程 + 限速）…")
         try:
             erp.all_products(contracts, delay=0.35)
