@@ -346,6 +346,15 @@ def aggregate(cfg: dict, rows: list[dict], scope: str = "商场店",
             }
         return buckets[store]
 
+    # 先把范围内所有门店都建出来 —— 这个月一单没开的店也要显示（0 元 0 单），
+    # 否则它整个从页面上消失，店长会以为门店被删了。
+    _scope_keep = _scope_stores(cfg, scope)
+    if _scope_keep is None:
+        _scope_keep = list(infos.keys())
+    for _n in _scope_keep:
+        if _n in infos:
+            bucket(_n)
+
     for r in rows:
         store = core.cell_text(r.get("htfl")) or unmatched_name
         if store not in infos:
@@ -495,7 +504,9 @@ def aggregate(cfg: dict, rows: list[dict], scope: str = "商场店",
             "count": total_count,
             "people": len([x for x in everyone if x["count"] > 0]),
             "avg": round(grand / total_count, 2) if total_count else 0.0,
-            "stores": len([b for b in store_list if b["count"] > 0]),
+            # 门店数按「范围内的门店」算，不按「有业绩的门店」算 ——
+            # 这个月没开单的店也算一家店。
+            "stores": len(store_list),
             "同比": _delta(grand, yoy.get("total", 0.0)) if yoy else None,
             "环比": _delta(grand, mom.get("total", 0.0)) if mom else None,
             "同比合同数": _delta(total_count, yoy.get("count", 0)) if yoy else None,
