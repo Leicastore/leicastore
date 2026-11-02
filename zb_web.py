@@ -846,6 +846,31 @@ class DataService:
                 })
                 rec["数量"] += float(it.get("数量") or 0)
                 rec["金额"] += float(it.get("金额") or 0)
+            # 有退货的合同，产品行本身看不出来（ERP 的明细接口没给退货列），
+            # 但合同金额已经按净额算了 —— 这里补一行负数「退货」，
+            # 否则今日卡片上的明细加起来和总额对不上。
+            try:
+                import zb_erp as _e4
+                rmap = _e4.load_return_map()
+                back_by_person: dict[tuple, float] = {}
+                for r in today_rows:
+                    back = rmap.get(str(r.get("ord") or "")) or 0.0
+                    if not back:
+                        continue
+                    key = (clean_person(r.get("xsry")),
+                           core.cell_text(r.get("htfl")))
+                    back_by_person[key] = back_by_person.get(key, 0.0) + back
+                for (person, store), back in back_by_person.items():
+                    merged[("退货", store, "退货")] = {
+                        "销售员": person or "（未填销售）",
+                        "门店": store,
+                        "型号": "退货（冲减）",
+                        "品类": "退货",
+                        "数量": 0.0,
+                        "金额": -round(back, 2),
+                    }
+            except Exception:
+                pass
             today_items = sorted(merged.values(), key=lambda x: -x["金额"])
             for rec in today_items:
                 rec["数量"] = round(rec["数量"], 2)
