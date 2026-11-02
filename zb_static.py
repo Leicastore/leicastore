@@ -81,9 +81,11 @@ def _cached_fetch(erp, e: dict, start: str, end: str, ttl_days: int = 7, cfg: di
             if age_days < ttl_days:
                 try:
                     got = json.loads(p.read_text(encoding="utf-8"))
-                    # 老缓存存的是未过滤的合同，这里补一道口径过滤
+                    # 缓存里存的是未过滤的合同，这里补一道口径过滤。
+                    # 顺便把「被排除的单」记下来，页面上才能显示「另有 N 单未计入」。
                     if cfg is not None:
-                        got = [r for r in got if core.shipped_ok(r, cfg)]
+                        import zb_erp as _e
+                        got = _e._apply_status_filter(got, cfg, a, b)
                     return got
                 except Exception:
                     pass
