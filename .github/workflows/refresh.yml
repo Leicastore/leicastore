@@ -104,6 +104,9 @@ jobs:
 
       - name: 生成静态看板（取数失败自动退回快照）
         id: gen
+        env:
+          # 看板访问码：只放在 Secret 里，不进仓库（仓库是公开的）
+          DASHBOARD_PASSWORD: ${{ secrets.DASHBOARD_PASSWORD }}
         # 没 Secret 就直接用快照，别去撞 ERP
         if: steps.cfg.outputs.have == '1'
         run: |

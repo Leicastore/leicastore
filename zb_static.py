@@ -103,7 +103,8 @@ def _cached_fetch(erp, e: dict, start: str, end: str, ttl_days: int = 7, cfg: di
     return fetch
 
 
-def _render(payload: dict, out_file: Path, log=print, presets: dict | None = None) -> Path:
+def _render(payload: dict, out_file: Path, log=print, presets: dict | None = None,
+            cfg: dict | None = None) -> Path:
     """把 payload 渲染成自包含的单文件 HTML"""
     html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
     css = (WEB_DIR / "style.css").read_text(encoding="utf-8")
@@ -113,13 +114,27 @@ def _render(payload: dict, out_file: Path, log=print, presets: dict | None = Non
     def dump(o) -> str:
         return json.dumps(o, ensure_ascii=False, default=str).replace("<", "\\u003c")
 
-    boot = "<script>window.__STATIC__=1;window.__DATA__=" + dump(payload) + ";"
-    # 多区间：把每个预设的整份数据都嵌进来，前端切换时不用联网。
-    # 只有当月那份要实时拉，其余（上月/去年…）都是历史数据，走 7 天缓存，几乎不增加 ERP 压力。
     presets = presets or {}
-    if len(presets) > 1:
-        boot += "window.__PRESETS__=" + dump(presets) + ";"
-    boot += "</script>"
+    # 有「公网访问码」就把数据加密：页面源码里看不到任何业务数字，
+    # 打开必须先输密码，浏览器本地解密。没有访问码就照旧明文（本地预览方便）。
+    # 访问码优先取环境变量：config.json 会被提交到公开仓库，
+    # 密码放里面等于把钥匙贴在门上。仓库里的值是空的，真密码在 GitHub Secret。
+    import os as _os
+    pwd = (_os.environ.get("DASHBOARD_PASSWORD")
+           or (cfg.get("网页版") or {}).get("公网访问码") or "").strip() if cfg else ""
+    if pwd:
+        import zb_crypt
+        envelope = {"看板": payload, "区间": presets}
+        blob = zb_crypt.encrypt_json(envelope, pwd)
+        boot = ("<script>window.__STATIC__=1;window.__LOCKED__=1;window.__ENC__="
+                + dump(blob) + ";</script>")
+        log(f"  数据已加密（密码 {len(pwd)} 位，密文 {len(blob['c']) / 1024:.0f} KB）")
+    else:
+        boot = "<script>window.__STATIC__=1;window.__DATA__=" + dump(payload) + ";"
+        # 多区间：把每个预设的整份数据都嵌进来，前端切换时不用联网。
+        if len(presets) > 1:
+            boot += "window.__PRESETS__=" + dump(presets) + ";"
+        boot += "</script>"
 
     html = html.replace('<link rel="stylesheet" href="style.css">',
                         "<style>\n" + css + "\n</style>")
@@ -217,7 +232,7 @@ def build(cfg: dict, scope: str, start: str, end: str, out_file: Path, log=print
         except Exception as exc:
             log(f"    「{name}」取不到，跳过：{exc}")
 
-    return _render(payload, out_file, log=log, presets=presets)
+    return _render(payload, out_file, log=log, presets=presets, cfg=cfg)
 
 
 def main(argv=None) -> int:

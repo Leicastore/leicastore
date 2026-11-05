@@ -2,6 +2,107 @@
 (function () {
   'use strict';
 
+  // ===================================================================
+  // 公网加密页：数据用密码加密过，必须解密才能渲染。
+  // 算法和 zb_crypt.py 一一对应（PBKDF2 派生 + HMAC 计数器流 + HMAC 校验），
+  // 全部用浏览器原生 crypto.subtle，不依赖任何外部库。
+  // ===================================================================
+  function b64ToBytes(s) {
+    var bin = atob(s), n = bin.length, out = new Uint8Array(n);
+    for (var i = 0; i < n; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+
+  function decryptBlob(blob, pwd) {
+    var S = window.crypto && window.crypto.subtle;
+    if (!S) return Promise.reject(new Error('浏览器不支持加密（要用 https 打开）'));
+    var salt = b64ToBytes(blob.s), cipher = b64ToBytes(blob.c), tag = b64ToBytes(blob.m);
+    var iters = blob.n;
+
+    var pkey = S.importKey('raw', new TextEncoder().encode(pwd), 'PBKDF2', false, ['deriveBits']);
+    return pkey.then(function (base) {
+      return S.deriveBits({ name: 'PBKDF2', salt: salt, iterations: iters, hash: 'SHA-256' },
+                          base, 512);
+    }).then(function (bits) {
+      var all = new Uint8Array(bits);
+      var encKey = all.slice(0, 32), macKey = all.slice(32, 64);
+
+      return S.importKey('raw', macKey, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+        .then(function (mk) { return S.sign('HMAC', mk, cipher); })
+        .then(function (sig) {
+          var got = new Uint8Array(sig), same = got.length === tag.length;
+          for (var i = 0; same && i < got.length; i++) same = got[i] === tag[i];
+          if (!same) throw new Error('密码不对');
+          return S.importKey('raw', encKey, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+        });
+    }).then(function (ek) {
+      var blocks = Math.ceil(cipher.length / 32);
+      var ks = new Uint8Array(blocks * 32);
+      var jobs = [];
+      for (var i = 0; i < blocks; i++) {
+        var msg = new Uint8Array(salt.length + 8);
+        msg.set(salt, 0);
+        var dv = new DataView(msg.buffer, salt.length, 8);
+        dv.setBigUint64(0, BigInt(i), false);
+        jobs.push(S.sign('HMAC', ek, msg));
+      }
+      return Promise.all(jobs).then(function (got) {
+        got.forEach(function (buf, i) { ks.set(new Uint8Array(buf), i * 32); });
+        var plain = new Uint8Array(cipher.length);
+        for (var j = 0; j < cipher.length; j++) plain[j] = cipher[j] ^ ks[j];
+        return new TextDecoder().decode(plain);
+      });
+    });
+  }
+
+  function showLock(onOk) {
+    var ov = document.createElement('div');
+    ov.id = 'lockOverlay';
+    ov.innerHTML =
+      '<div class="lock-card">' +
+        '<div class="lock-logo">销售看板</div>' +
+        '<div class="lock-sub">请输入访问码</div>' +
+        '<input id="lockPwd" type="password" autocomplete="current-password" ' +
+          'placeholder="访问码">' +
+        '<button id="lockGo">进入看板</button>' +
+        '<div id="lockErr" class="lock-err"></div>' +
+        '<div class="lock-tip">数据已加密，密码错误无法查看</div>' +
+      '</div>';
+    document.body.appendChild(ov);
+    document.body.style.overflow = 'hidden';
+
+    var inp = document.getElementById('lockPwd');
+    var btn = document.getElementById('lockGo');
+    var err = document.getElementById('lockErr');
+    setTimeout(function () { inp.focus(); }, 60);
+
+    function submit() {
+      var v = inp.value;
+      if (!v) { err.textContent = '请输入访问码'; return; }
+      btn.disabled = true;
+      btn.textContent = '解密中…';
+      err.textContent = '';
+      decryptBlob(window.__ENC__, v).then(function (txt) {
+        var env = JSON.parse(txt);
+        window.__DATA__ = env['看板'];
+        window.__PRESETS__ = env['区间'] || {};
+        window.__STATIC__ = 1;
+        delete window.__LOCKED__;
+        ov.remove();
+        document.body.style.overflow = '';
+        try { sessionStorage.setItem('tn_pwd', v); } catch (e) {}
+        onOk();
+      }).catch(function (e) {
+        btn.disabled = false;
+        btn.textContent = '进入看板';
+        err.textContent = e.message || '解密失败';
+        inp.select();
+      });
+    }
+    btn.addEventListener('click', submit);
+    inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') submit(); });
+  }
+
   // 静态托管模式（GitHub Pages 等）：数据直接嵌在页面里，没有后台服务。
   // 由 zb_static.py 生成时注入 window.__DATA__ / window.__PRODUCTS__。
   var STATIC = window.__STATIC__ ? (window.__DATA__ || null) : null;
@@ -1729,13 +1830,43 @@
   }
 
   /* ---------------- 启动 ---------------- */
-  readHash();
-  if (STATIC) enterStaticMode();
-  syncChips();
-  if (state.q) $('q').value = state.q;
-  bind();
-  load();
-  if (state.view === 'product') switchView('product');
+  function boot() {
+    readHash();
+    if (STATIC) enterStaticMode();
+    syncChips();
+    if (state.q) $('q').value = state.q;
+    bind();
+    load();
+    if (state.view === 'product') switchView('product');
+  }
+
+  if (window.__LOCKED__ && window.__ENC__) {
+    // 数据是加密的：先解锁再启动
+    showLock(function () {
+      STATIC = window.__DATA__;
+      boot();
+    });
+    // 上次输过密码就自动再解一次（会话内免重复输入）
+    try {
+      var cached = sessionStorage.getItem('tn_pwd');
+      if (cached) {
+        decryptBlob(window.__ENC__, cached).then(function (txt) {
+          var env = JSON.parse(txt);
+          window.__DATA__ = env['看板'];
+          window.__PRESETS__ = env['区间'] || {};
+          window.__STATIC__ = 1;
+          delete window.__LOCKED__;
+          var ov = document.getElementById('lockOverlay');
+          if (ov) ov.remove();
+          document.body.style.overflow = '';
+          STATIC = window.__DATA__;
+          boot();
+        }).catch(function () { try { sessionStorage.removeItem('tn_pwd'); } catch (e) {} });
+      }
+    } catch (e) {}
+  } else {
+    boot();
+  }
 
   window.addEventListener('hashchange', function () {
     var before = state.scope + '|' + state.preset + '|' + state.start + '|' + state.end;
