@@ -632,7 +632,8 @@ class DataService:
             return None
         try:
             import zb_products as zp
-            cache = json.loads(cache_path.read_text(encoding="utf-8"))
+            import zb_crypt as _zc5
+            cache = _zc5.load_json(cache_path, default={}) or {}
             items = zp.classify_all(cache, rows, self.cfg)
             stores_cfg = self.cfg.get("门店", {}) or {}
             scope_stores = None
@@ -1351,7 +1352,7 @@ class Handler(BaseHTTPRequestHandler):
 
         print(f"[请求] 产品分类  {start or '不限'} ~ {end or '不限'}  范围={scope}")
         rows = self.service.fetch(start, end)
-        cache = json.loads(cache_path.read_text(encoding="utf-8"))
+        import zb_crypt as _zcw; cache = _zcw.load_json(cache_path, default={}) or {}
         items = zp.classify_all(cache, rows, self.cfg)
 
         stores_cfg = self.cfg.get("门店", {}) or {}

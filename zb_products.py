@@ -456,7 +456,7 @@ def load_items(cfg: dict, tag: str = "", log=print):
             f"还没有产品明细缓存：{cache_path}\n"
             "先跑： python zb_products.py --抓取"
         )
-    cache = json.loads(cache_path.read_text(encoding="utf-8"))
+    import zb_crypt as _zcp; cache = _zcp.load_json(cache_path, default={}) or {}
 
     e = cfg.get("智邦ERP") or {}
     dr = e.get("日期范围") or {}

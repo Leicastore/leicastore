@@ -25,6 +25,7 @@ import hashlib
 import hmac
 import json
 import os
+from pathlib import Path
 
 ITERATIONS = 200_000
 SALT_LEN = 16
@@ -100,3 +101,55 @@ if __name__ == "__main__":
         print("  错误密码居然解开了 ✗")
     except ValueError:
         print("  错误密码被拒绝 ✅")
+
+
+# ---------------------------------------------------------------- 仓库里的缓存文件
+# 数据/缓存 下的 json 里装着客户名、产品、金额。仓库是公开的，
+# 这些文件必须加密后再提交。读的时候自动判断是不是密文。
+def cache_pwd() -> str:
+    """取用于加密仓库缓存的密码：环境变量优先，其次本机私有文件"""
+    import os
+    pwd = (os.environ.get("DASHBOARD_PASSWORD") or "").strip()
+    if pwd:
+        return pwd
+    try:
+        f = Path(__file__).resolve().parent / "数据/缓存/_key.txt"
+        return f.read_text(encoding="utf-8").strip()
+    except Exception:
+        return ""
+
+
+def save_json(path, obj, pwd: str = "") -> None:
+    """写 json。有密码就写成密文，没有就明文（本地没配密码时才这样）"""
+    import os
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pwd = pwd or cache_pwd()
+    if pwd:
+        blob = encrypt_json(obj, pwd)
+        path.write_text(json.dumps({"__enc__": blob}, ensure_ascii=False), encoding="utf-8")
+    else:
+        path.write_text(json.dumps(obj, ensure_ascii=False, default=str), encoding="utf-8")
+
+
+def load_json(path, pwd: str = "", default=None):
+    """读 json。是密文就用密码解开；没有密码就报错（不静默返回空）"""
+    path = Path(path)
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return default
+    if isinstance(raw, dict) and "__enc__" in raw and isinstance(raw["__enc__"], dict):
+        use = pwd or cache_pwd()
+        if not use:
+            raise ValueError(f"{path} 是加密的，需要 DASHBOARD_PASSWORD 才能读")
+        return decrypt_json(raw["__enc__"], use)
+    return raw
+
+
+def is_encrypted(path) -> bool:
+    try:
+        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+        return isinstance(raw, dict) and "__enc__" in raw
+    except Exception:
+        return False

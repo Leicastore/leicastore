@@ -65,8 +65,11 @@ def _font(size: int, bold: bool = False):
 
 
 def _load(p: Path, default):
+    """读 json —— 仓库里的是密文，用 zb_crypt 自动解开"""
     try:
-        return json.loads(p.read_text(encoding="utf-8"))
+        import zb_crypt as _zc
+        got = _zc.load_json(p, default=None)
+        return default if got is None else got
     except Exception:
         return default
 

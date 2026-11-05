@@ -262,7 +262,8 @@ class ZbErp:
         cache: dict[str, list] = {}
         if cache_path.exists():
             try:
-                cache = json.loads(cache_path.read_text(encoding="utf-8"))
+                import zb_crypt as _zc
+                cache = _zc.load_json(cache_path, default={}) or {}
                 log(f"  断点缓存：已有 {len(cache)} 份合同的产品明细")
             except Exception:
                 cache = {}
@@ -305,7 +306,7 @@ class ZbErp:
                     break
                 except ErpSessionDown:
                     # 服务端会话挂了，保存进度并立刻停手
-                    cache_path.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
+                    import zb_crypt as _zc2; _zc2.save_json(cache_path, cache)
                     raise
                 except Exception as exc:
                     if attempt == max_retry - 1:
@@ -315,11 +316,11 @@ class ZbErp:
                         time.sleep(1.5 * (attempt + 1))
             done += 1
             if done % 50 == 0:
-                cache_path.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
+                import zb_crypt as _zc2; _zc2.save_json(cache_path, cache)
                 log(f"    进度 {done}/{len(todo)}（已存档）")
             time.sleep(delay)
 
-        cache_path.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
+        import zb_crypt as _zc9; _zc9.save_json(cache_path, cache)
         save_return_map(_back)
         filled_pl = sum(1 for v in cache.values() if v)
         nz = sum(1 for v in _back.values() if v)
@@ -403,7 +404,8 @@ def load_return_map() -> dict:
     if return_map_cache is not None:
         return return_map_cache
     try:
-        raw = json.loads((core.BASE / RETURN_CACHE_REL).read_text(encoding="utf-8"))
+        import zb_crypt as _zc3
+        raw = _zc3.load_json(core.BASE / RETURN_CACHE_REL, default={}) or {}
         return_map_cache = {str(k): float(v or 0) for k, v in (raw or {}).items()
                             if isinstance(v, (int, float, str))}
         # 兼容 {ord: {"退货金额": x}} 的写法
@@ -424,9 +426,8 @@ def save_return_map(m: dict) -> None:
     (core.BASE / RETURN_CACHE_REL).parent.mkdir(parents=True, exist_ok=True)
     # 零退货也要存：下次才能靠「表里有没有」判断要不要补查，
     # 只存非零的话每次都会把全部合同重查一遍（十几分钟）。
-    (core.BASE / RETURN_CACHE_REL).write_text(
-        json.dumps({k: v for k, v in sorted(m.items())}, ensure_ascii=False, indent=0),
-        encoding="utf-8")
+    import zb_crypt as _zc4
+    _zc4.save_json(core.BASE / RETURN_CACHE_REL, {k: v for k, v in sorted(m.items())})
     return_map_cache = m
 
 

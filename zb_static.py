@@ -32,7 +32,7 @@ def _product_payload(cfg: dict, rows: list[dict], scope: str, fetched: str) -> d
         return None
     try:
         import zb_products as zp
-        cache = json.loads(cache_path.read_text(encoding="utf-8"))
+        cache = zb_crypt.load_json(cache_path, default={}) or {}
         items = zp.classify_all(cache, rows, cfg)
         stores_cfg = cfg.get("门店", {}) or {}
         scope_stores = None
@@ -81,7 +81,7 @@ def _cached_fetch(erp, e: dict, start: str, end: str, ttl_days: int = 7, cfg: di
             age_days = (_dt.datetime.now().timestamp() - p.stat().st_mtime) / 86400
             if age_days < ttl_days:
                 try:
-                    got = json.loads(p.read_text(encoding="utf-8"))
+                    got = zb_crypt.load_json(p, default=None)
                     # 缓存里存的是未过滤的合同，这里补一道口径过滤。
                     # 顺便把「被排除的单」记下来，页面上才能显示「另有 N 单未计入」。
                     if cfg is not None:
@@ -92,7 +92,7 @@ def _cached_fetch(erp, e: dict, start: str, end: str, ttl_days: int = 7, cfg: di
                     pass
         rows = erp.contracts(a, b, page_size=int(e.get("每页条数") or 300), log=None)
         try:
-            p.write_text(json.dumps(rows, ensure_ascii=False, default=str), encoding="utf-8")
+            zb_crypt.save_json(p, rows)
         except Exception:
             pass
         if cfg is not None:
@@ -120,8 +120,11 @@ def _render(payload: dict, out_file: Path, log=print, presets: dict | None = Non
     # 访问码优先取环境变量：config.json 会被提交到公开仓库，
     # 密码放里面等于把钥匙贴在门上。仓库里的值是空的，真密码在 GitHub Secret。
     import os as _os
+    import zb_crypt as _zc0
+    # 环境变量 → 本机密钥文件 → config.json（config 里一般是空的，因为要进公开仓库）
     pwd = (_os.environ.get("DASHBOARD_PASSWORD")
-           or (cfg.get("网页版") or {}).get("公网访问码") or "").strip() if cfg else ""
+           or _zc0.cache_pwd()
+           or ((cfg or {}).get("网页版") or {}).get("公网访问码") or "").strip()
     if pwd:
         import zb_crypt
         envelope = {"看板": payload, "区间": presets}
@@ -166,7 +169,10 @@ def build_offline(out_file: Path, log=print) -> Path:
     """
     if not SNAP.exists():
         raise SystemExit(f"没有快照文件 {SNAP}，离线模式用不了")
-    payload = json.loads(SNAP.read_text(encoding="utf-8"))
+    import zb_crypt as _zc7
+    payload = _zc7.load_json(SNAP, default=None)
+    if not payload:
+        raise SystemExit(f"快照读不出来（{SNAP}）—— 可能需要 DASHBOARD_PASSWORD")
     log(f"  离线模式：用快照（{payload.get('fetchedAt') or '未知时间'}）")
     return _render(payload, out_file, log=log)
 
@@ -206,8 +212,8 @@ def build(cfg: dict, scope: str, start: str, end: str, out_file: Path, log=print
     # 存一份快照，供离线兜底用
     try:
         SNAP.parent.mkdir(parents=True, exist_ok=True)
-        SNAP.write_text(json.dumps(payload, ensure_ascii=False, default=str),
-                        encoding="utf-8")
+        import zb_crypt as _zc6
+        _zc6.save_json(SNAP, payload)
         log(f"  快照已存（{SNAP.stat().st_size/1024:.0f} KB）")
     except Exception as exc:
         log(f"  （快照存不下：{exc}）")

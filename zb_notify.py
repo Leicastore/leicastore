@@ -74,8 +74,11 @@ def _money_s(v) -> str:
 
 
 def _load_json(p: Path, default):
+    """读 json —— 仓库里的是密文，用 zb_crypt 自动解开"""
     try:
-        return json.loads(p.read_text(encoding="utf-8"))
+        import zb_crypt as _zc
+        got = _zc.load_json(p, default=None)
+        return default if got is None else got
     except Exception:
         return default
 
@@ -272,11 +275,12 @@ def main() -> int:
         pass
 
     STATE.parent.mkdir(parents=True, exist_ok=True)
-    STATE.write_text(json.dumps({
+    import zb_crypt as _zcs
+    _zcs.save_json(STATE, {
         "已通知": sorted(seen)[-MAX_KEEP:],
         "更新时间": (_dt.datetime.now(_dt.timezone.utc)
                     + _dt.timedelta(hours=8)).strftime("%Y-%m-%d %H:%M:%S"),
-    }, ensure_ascii=False, indent=1), encoding="utf-8")
+    })
     print(f"  已推送 {len(fresh)} 单")
     return 0
 

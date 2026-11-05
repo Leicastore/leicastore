@@ -31,6 +31,10 @@ jobs:
     # 机器人自己提交快照时不重跑，否则会自己触发自己
     if: github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip ci]')
     runs-on: ubuntu-latest
+    env:
+      # 仓库里的缓存和看板数据都是加密的，所有步骤都要能拿到这个密码。
+      # 只放在 Secret 里 —— 仓库是公开的，写进 config.json 等于把钥匙贴门上。
+      DASHBOARD_PASSWORD: ${{ secrets.DASHBOARD_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -104,9 +108,6 @@ jobs:
 
       - name: 生成静态看板（取数失败自动退回快照）
         id: gen
-        env:
-          # 看板访问码：只放在 Secret 里，不进仓库（仓库是公开的）
-          DASHBOARD_PASSWORD: ${{ secrets.DASHBOARD_PASSWORD }}
         # 没 Secret 就直接用快照，别去撞 ERP
         if: steps.cfg.outputs.have == '1'
         run: |
