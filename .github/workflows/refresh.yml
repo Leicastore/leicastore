@@ -229,42 +229,6 @@ jobs:
             git push
           fi
 
-      # 公网页已经下线 —— 看板改走 Tailscale 私有网络（公网上没有入口）。
-      # 这一步把产物换成一张提示页，页面上没有任何业务数据。
-      # 注意：要放在「检查产物」之后（那时真页面已经校验过了）。
-      - name: 公网页改为提示页
-        run: |
-          cat > public/index.html <<'HTML'
-          <!doctype html>
-          <html lang="zh-CN"><head><meta charset="utf-8">
-          <meta name="viewport" content="width=device-width,initial-scale=1">
-          <title>销售看板 已迁移</title>
-          <style>
-            *{box-sizing:border-box;margin:0;padding:0}
-            body{min-height:100vh;display:flex;align-items:center;justify-content:center;
-                 background:#0B0B0D;color:#fff;font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;padding:24px}
-            .card{max-width:520px;width:100%;background:#fff;color:#14161A;border-radius:16px;
-                  padding:40px 32px;text-align:center;box-shadow:0 24px 70px rgba(0,0,0,.5)}
-            h1{font-size:21px;letter-spacing:.04em;padding-bottom:16px;margin-bottom:22px;
-               border-bottom:2px solid #E20613}
-            p{font-size:14.5px;line-height:1.9;color:#3A4048}
-            .tip{margin-top:18px;padding-top:16px;border-top:1px solid #EEF0F3;
-                 font-size:12.5px;color:#8A919B;line-height:1.8}
-            code{background:#F3F5F8;padding:2px 7px;border-radius:5px;font-size:13px;color:#C81E2D}
-          </style></head>
-          <body>
-            <div class="card">
-              <h1>销售看板 已迁移</h1>
-              <p>为了数据安全，看板已经搬进公司内网，<br>公网上不再提供访问入口。</p>
-              <p style="margin-top:14px">请在电脑或手机上安装 <b>Tailscale</b>，<br>登录公司账号后打开：</p>
-              <p style="margin-top:10px"><code>http://100.92.74.31:8848/</code></p>
-              <div class="tip">不知道账号或打不开？联系管理员</div>
-            </div>
-          </body></html>
-          HTML
-          echo "已替换为提示页：$(wc -c < public/index.html) 字节"
-          grep -c '__DATA__' public/index.html || echo "确认：提示页里没有内联数据 ✅"
-
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
