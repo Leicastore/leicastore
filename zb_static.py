@@ -130,7 +130,18 @@ def _render(payload: dict, out_file: Path, log=print, presets: dict | None = Non
         envelope = {"看板": payload, "区间": presets}
         blob = zb_crypt.encrypt_json(envelope, pwd)
         boot = ("<script>window.__STATIC__=1;window.__LOCKED__=1;window.__ENC__="
-                + dump(blob) + ";</script>")
+                + dump(blob) + ";")
+        # 每人一个访问码：把数据钥匙按各自的码再包一份。
+        # 页面拿到码先解出钥匙，再用钥匙解数据 —— 这样谁走了只作废他自己那条。
+        try:
+            import zb_codes
+            keys = zb_codes.build_keys(zb_codes.load_table(), pwd)
+            if keys:
+                boot += "window.__KEYS__=" + dump(keys) + ";"
+                log(f"  单独访问码 {len(keys)} 个")
+        except Exception as exc:
+            log(f"  （单独访问码读取失败，忽略：{exc}）")
+        boot += "</script>"
         log(f"  数据已加密（密码 {len(pwd)} 位，密文 {len(blob['c']) / 1024:.0f} KB）")
     else:
         boot = "<script>window.__STATIC__=1;window.__DATA__=" + dump(payload) + ";"

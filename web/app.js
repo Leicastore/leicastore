@@ -55,6 +55,33 @@
     });
   }
 
+  // 从输入的码里取出"数据钥匙"。
+  // 页面里带 __KEYS__（每人一份，用各自的码加密了钥匙）：
+  //   - 输入个人码 → 用他的码解开 → 得到钥匙
+  //   - 输入总码   → 表里没这个人 → 直接当钥匙（兼容原来的总码）
+  function sha256Hex(s) {
+    return window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(s))
+      .then(function (buf) {
+        return Array.from(new Uint8Array(buf)).map(function (b) {
+          return b.toString(16).padStart(2, '0');
+        }).join('');
+      });
+  }
+
+  function resolveDataKey(code) {
+    var keys = window.__KEYS__ || [];
+    if (!keys.length) return Promise.resolve(code);
+    return sha256Hex(code).then(function (h) {
+      var hit = null;
+      for (var i = 0; i < keys.length; i++) {
+        if (keys[i].h === h.slice(0, 10)) { hit = keys[i]; break; }
+      }
+      if (!hit) return code;                       // 不是个人码 → 当总码用
+      return decryptBlob(hit.w, code);             // 解出来就是数据钥匙
+    }).catch(function () { return code; });
+  }
+
+
   function showLock(onOk) {
     var ov = document.createElement('div');
     ov.id = 'lockOverlay';
@@ -82,7 +109,9 @@
       btn.disabled = true;
       btn.textContent = '解密中…';
       err.textContent = '';
-      decryptBlob(window.__ENC__, v).then(function (txt) {
+      resolveDataKey(v).then(function (key) {
+        return decryptBlob(window.__ENC__, key);
+      }).then(function (txt) {
         var env = JSON.parse(txt);
         window.__DATA__ = env['看板'];
         window.__PRESETS__ = env['区间'] || {};
@@ -1850,7 +1879,9 @@
     try {
       var cached = sessionStorage.getItem('tn_pwd');
       if (cached) {
-        decryptBlob(window.__ENC__, cached).then(function (txt) {
+        resolveDataKey(cached).then(function (key) {
+          return decryptBlob(window.__ENC__, key);
+        }).then(function (txt) {
           var env = JSON.parse(txt);
           window.__DATA__ = env['看板'];
           window.__PRESETS__ = env['区间'] || {};
