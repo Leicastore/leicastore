@@ -76,9 +76,9 @@
       for (var i = 0; i < keys.length; i++) {
         if (keys[i].h === h.slice(0, 10)) { hit = keys[i]; break; }
       }
-      if (!hit) return code;                       // 不是个人码 → 当总码用
-      return decryptBlob(hit.w, code);             // 解出来就是数据钥匙
-    }).catch(function () { return code; });
+      if (!hit) throw new Error('访问码无效');      // 不在名单里 → 直接拒绝
+      return decryptBlob(hit.w, code);             // 解出来才是数据钥匙
+    });
   }
 
 

@@ -153,3 +153,15 @@ def is_encrypted(path) -> bool:
         return isinstance(raw, dict) and "__enc__" in raw
     except Exception:
         return False
+
+def data_key(master: str) -> str:
+    """由总密码派生"数据钥匙"。
+
+    为什么要派生：以前数据直接用总密码加密，导致"总密码 = 登录码 = 钥匙"，
+    就算把某个人的登录码作废，只要他知道总密码照样能解开。
+    派生之后，谁都不直接知道钥匙 —— 只能靠自己的登录码换出来。
+    """
+    import hashlib
+    raw = hashlib.pbkdf2_hmac("sha256", (master + "|tn-data-key-v1").encode("utf-8"),
+                              b"tn-dashboard-key", 120_000, dklen=32)
+    return raw.hex()

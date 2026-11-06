@@ -128,17 +128,23 @@ def _render(payload: dict, out_file: Path, log=print, presets: dict | None = Non
     if pwd:
         import zb_crypt
         envelope = {"看板": payload, "区间": presets}
-        blob = zb_crypt.encrypt_json(envelope, pwd)
+        # 真正加密数据的是派生出来的钥匙，不是总密码本身
+        dkey = zb_crypt.data_key(pwd)
+        blob = zb_crypt.encrypt_json(envelope, dkey)
         boot = ("<script>window.__STATIC__=1;window.__LOCKED__=1;window.__ENC__="
                 + dump(blob) + ";")
         # 每人一个访问码：把数据钥匙按各自的码再包一份。
         # 页面拿到码先解出钥匙，再用钥匙解数据 —— 这样谁走了只作废他自己那条。
         try:
             import zb_codes
-            keys = zb_codes.build_keys(zb_codes.load_table(), pwd)
+            keys = zb_codes.build_keys(zb_codes.load_table(), dkey)
             if keys:
                 boot += "window.__KEYS__=" + dump(keys) + ";"
                 log(f"  单独访问码 {len(keys)} 个")
+            else:
+                # 一个码都没有 → 退回"总密码当钥匙"，否则谁都进不去
+                boot = boot.replace("<script>", "<script>", 1)
+                log("  注意：访问码表是空的，暂时仍用总密码当钥匙")
         except Exception as exc:
             log(f"  （单独访问码读取失败，忽略：{exc}）")
         boot += "</script>"
