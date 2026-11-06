@@ -92,6 +92,14 @@ jobs:
               repo.setdefault("智邦ERP", {}).update(erp)
           else:
               repo.update(secret)          # 没分段的老格式，退回整体覆盖
+
+          # ERP 密码统一以 DASHBOARD_PASSWORD 为准。
+          # 原因：这两个密码现在设成了同一个，维护两份 Secret 只会互相打架
+          # （改了一个忘了另一个，看板就静默停止更新）。
+          # 以后想用不同的密码，就删掉下面这一段，改成在 CONFIG_JSON 里给。
+          _dash = os.environ.get("DASHBOARD_PASSWORD") or ""
+          if _dash:
+              repo.setdefault("智邦ERP", {})["密码"] = _dash
           json.dump(repo, open("config.json", "w", encoding="utf-8"),
                     ensure_ascii=False, indent=2)
           print("配置已合并：ERP 凭据来自 Secret，其余取仓库 config.json")
