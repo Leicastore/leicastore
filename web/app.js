@@ -119,7 +119,10 @@
         delete window.__LOCKED__;
         ov.remove();
         document.body.style.overflow = '';
-        try { sessionStorage.setItem('tn_pwd', v); } catch (e) {}
+        try {
+          localStorage.setItem('tn_pwd', v);
+          localStorage.setItem('tn_pwd_at', String(Date.now()));
+        } catch (e) {}
         onOk();
       }).catch(function (e) {
         btn.disabled = false;
@@ -1875,9 +1878,18 @@
       STATIC = window.__DATA__;
       boot();
     });
-    // 上次输过密码就自动再解一次（会话内免重复输入）
+    // 上次输过访问码就自动再解一次（保存 30 天，过期要重新输入）
     try {
-      var cached = sessionStorage.getItem('tn_pwd');
+      var cached = localStorage.getItem('tn_pwd');
+      var at = parseInt(localStorage.getItem('tn_pwd_at') || '0', 10);
+      var THIRTY_DAYS = 30 * 24 * 3600 * 1000;
+      if (!cached || !at || (Date.now() - at) > THIRTY_DAYS) {
+        try {
+          localStorage.removeItem('tn_pwd');
+          localStorage.removeItem('tn_pwd_at');
+        } catch (e2) {}
+        cached = null;
+      }
       if (cached) {
         resolveDataKey(cached).then(function (key) {
           return decryptBlob(window.__ENC__, key);
@@ -1892,7 +1904,12 @@
           document.body.style.overflow = '';
           STATIC = window.__DATA__;
           boot();
-        }).catch(function () { try { sessionStorage.removeItem('tn_pwd'); } catch (e) {} });
+        }).catch(function () {
+          try {
+            localStorage.removeItem('tn_pwd');
+            localStorage.removeItem('tn_pwd_at');
+          } catch (e) {}
+        });
       }
     } catch (e) {}
   } else {
