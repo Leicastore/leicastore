@@ -634,6 +634,34 @@ class DataService:
             import zb_products as zp
             import zb_crypt as _zc5
             cache = _zc5.load_json(cache_path, default={}) or {}
+
+            # 本地看板以前只读缓存，新单的产品名要等云端跑完才有 ——
+            # 「今日销售」经常只显示金额、没有产品。这里顺手把缺的补上，
+            # 最多补 20 份（一天就几单，成本很低）。
+            try:
+                missing = [r for r in rows
+                           if str(r.get("ord")) and not cache.get(str(r.get("ord")))]
+                if missing:
+                    erp = self._erp()
+                    filled = 0
+                    for r in missing[:20]:
+                        o = str(r.get("ord"))
+                        try:
+                            det = erp.bill_detail(o)
+                            cache[o] = det["产品"]
+                            if det["退货金额"]:
+                                rmap = _zc5.load_json(
+                                    core.BASE / "数据/缓存/退货金额.json", default={}) or {}
+                                rmap[o] = det["退货金额"]
+                                _zc5.save_json(core.BASE / "数据/缓存/退货金额.json", rmap)
+                            filled += 1
+                        except Exception:
+                            pass
+                    if filled:
+                        _zc5.save_json(cache_path, cache)
+                        print(f"  补了 {filled} 份合同的产品明细")
+            except Exception as exc:
+                print(f"  （补产品明细失败，忽略：{exc}）")
             items = zp.classify_all(cache, rows, self.cfg)
             stores_cfg = self.cfg.get("门店", {}) or {}
             scope_stores = None
@@ -1588,12 +1616,31 @@ def main(argv=None) -> int:
     Handler.cfg = cfg
     Handler.service = DataService(cfg)
 
-    try:
-        srv = BoardServer((bind, port), Handler)
-    except OSError as exc:
-        print(f"[错误] 端口 {port} 起不来：{exc}")
-        print(f"可能是被别的程序占用了。换一个端口再试： python zb_web.py --端口 9000")
-        return 1
+    # 绑地址要容错：如果是绑在 Tailscale 的 100.x 上，开机时那个网卡
+    # 可能还没就绪（Tailscale 服务还没连上），直接绑会报 WinError 10049
+    # —— 以前看板"启动即死"就是它。这里先等一会儿，等不到就退回监听全部。
+    srv = None
+    if bind not in ("0.0.0.0", "", "127.0.0.1"):
+        for attempt in range(24):          # 最多等 2 分钟
+            try:
+                srv = BoardServer((bind, port), Handler)
+                print(f"  已绑定 {bind}:{port}")
+                break
+            except OSError as exc:
+                if attempt == 0:
+                    print(f"  {bind} 暂时绑不上（{exc}），等网卡就绪…")
+                time.sleep(5)
+
+    if srv is None:
+        try:
+            srv = BoardServer((bind if bind in ("0.0.0.0", "", "127.0.0.1")
+                               else "0.0.0.0", port), Handler)
+            if bind not in ("0.0.0.0", "", "127.0.0.1"):
+                print(f"  [!] {bind} 一直没就绪，改成监听全部网卡（0.0.0.0）")
+        except OSError as exc:
+            print(f"[错误] 端口 {port} 起不来：{exc}")
+            print("可能是被别的程序占用了。换一个端口再试： python zb_web.py --端口 9000")
+            return 1
 
     print("=" * 60)
     print("  天诺影像 · 商场店销售看板")
@@ -1606,7 +1653,7 @@ def main(argv=None) -> int:
         if code:
             print(f"      访问码： {code}")
         else:
-            print("      ⚠ 没设访问码，同网段任何人都能看，建议在 config.json 里设「访问码」")
+            print("      [!] 没设访问码，同网段任何人都能看，建议在 config.json 里设「访问码」")
     else:
         print("  局域网访问：未开启（config.json 的「网页版 → 监听」改成 0.0.0.0 才开）")
     print(f"  默认：{(wc.get('默认看') or '商场店')} / {(wc.get('默认时间') or '今年')}")

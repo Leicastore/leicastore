@@ -752,3 +752,36 @@ def shipped_ok(row: dict, cfg: dict) -> bool:
     f = cell_text(row.get(r["fk"]))
     c = cell_text(row.get(r["ck"]))
     return f == r["fv"] and c == r["cv"]
+
+# ---- 编码兜底 ----
+# Windows 计划任务启动时默认是 GBK，print 一个 ⚠ 就会 UnicodeEncodeError 崩掉
+# （看板"启动即死"就是它）。这里统一把标准输出改成 utf-8，加个 errors 兜底。
+_OLD_STREAMS = []      # 保住旧包装器，否则它被回收时会关掉底层 buffer
+
+
+def _force_utf8() -> None:
+    """Windows 计划任务启动时默认 GBK，print 一个特殊字符就会崩。
+
+    注意：只包装不是 utf-8 的流，并把旧对象留一份引用 ——
+    直接重新包装会让旧包装器被垃圾回收，连带把底层 buffer 关掉
+    （表现为莫名的 "I/O operation on closed file"）。
+    """
+    import io as _io
+    import sys as _sys
+    for name in ("stdout", "stderr"):
+        stream = getattr(_sys, name, None)
+        if stream is None:
+            continue
+        enc = (getattr(stream, "encoding", "") or "").lower()
+        if enc in ("utf-8", "utf8"):
+            continue
+        buf = getattr(stream, "buffer", None)
+        if buf is None:
+            continue
+        try:
+            _OLD_STREAMS.append(stream)
+            setattr(_sys, name,
+                    _io.TextIOWrapper(buf, encoding="utf-8", errors="replace",
+                                      line_buffering=True))
+        except Exception:
+            pass
